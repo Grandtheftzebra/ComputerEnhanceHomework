@@ -101,7 +101,7 @@ void decodeFile(const std::string& path)
     std::cout << "; " << path << " disassembly\n";
     std::cout << "bits 16\n\n";
 
-    for (size_t i = 0; i < bytes.size(); )
+    for (size_t i = 0; i < bytes.size(); i += 2)
     {
         if (i + 1 >= bytes.size())
         {
@@ -113,8 +113,6 @@ void decodeFile(const std::string& path)
         std::cout << instruction.mnemonic << ' '
                   << instruction.destination << ", "
                   << instruction.source << '\n';
-
-        i += 2;
     }
 }
 
