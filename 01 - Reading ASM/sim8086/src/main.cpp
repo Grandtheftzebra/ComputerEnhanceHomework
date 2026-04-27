@@ -10,6 +10,7 @@ struct DecodeInstruction
     std::string mnemonic;
     std::string destination;
     std::string source;
+    size_t size;
 };
 
 
@@ -50,6 +51,7 @@ const char* getRegisterName(const uint8_t regCode, const uint8_t w)
     return (w == 0) ? reg8[regCode] : reg16[regCode];
 }
 
+
 bool isMovRegisterMemoryToFromRegister(const uint8_t byte1)
 {
     return (byte1 >> 2) == 0b100010;
@@ -79,6 +81,7 @@ DecodeInstruction decodeMovRegisterToRegister(const uint8_t byte1, const uint8_t
 
     DecodeInstruction result;
     result.mnemonic = "mov";
+    result.size = 2;
     if (d == 1)
     {
         result.destination = regOperand;
@@ -93,6 +96,57 @@ DecodeInstruction decodeMovRegisterToRegister(const uint8_t byte1, const uint8_t
     return result;
 }
 
+bool isMovImmediateToRegister(const uint8_t byte1)
+{
+    return (byte1 >> 4) == 0b1011;
+}
+
+DecodeInstruction decodeMovImmediateToRegister(const std::vector<uint8_t>& bytes, const size_t index)
+{
+    const uint8_t byte1 = bytes[index];
+    if (!isMovImmediateToRegister(byte1))
+    {
+        throw std::runtime_error("Unsupported instruction not a mov Immediate to Register instruction.");
+    }
+
+    const uint8_t w = (byte1 >> 3) & 0b1;
+    const uint8_t reg = byte1 & 0b111;
+
+    DecodeInstruction result;
+    result.mnemonic = "mov";
+    result.destination = getRegisterName(reg, w);
+
+    if (w == 0)
+    {
+        if (index + 1 >= bytes.size())
+        {
+            throw std::runtime_error("unexpected end of file while decoding 8-bit immediate");
+        }
+
+        const uint8_t immediate = bytes[index + 1];
+
+        result.source = std::to_string(immediate);
+        result.size = 2;
+    }
+    else
+    {
+        if (index + 2 >= bytes.size())
+        {
+            throw std::runtime_error("unexpected end of file while decoding 16-bit immediate");
+        }
+
+        const uint8_t lowByte = bytes[index + 1];
+        const uint8_t highByte = bytes[index + 2];
+
+        const uint16_t immediate = static_cast<uint16_t>(lowByte) | (static_cast<uint16_t>(highByte) << 8);
+
+        result.source = std::to_string(immediate);
+        result.size = 3;
+    }
+
+    return result;
+}
+
 void decodeFile(const std::string& path)
 {
     const std::vector<uint8_t> bytes = readBinaryFile(path);
@@ -101,7 +155,7 @@ void decodeFile(const std::string& path)
     std::cout << "; " << path << " disassembly\n";
     std::cout << "bits 16\n\n";
 
-    for (size_t i = 0; i < bytes.size(); i += 2)
+    for (size_t i = 0; i < bytes.size();)
     {
         if (i + 1 >= bytes.size())
         {
@@ -113,6 +167,8 @@ void decodeFile(const std::string& path)
         std::cout << instruction.mnemonic << ' '
                   << instruction.destination << ", "
                   << instruction.source << '\n';
+
+        i += instruction.size;
     }
 }
 
