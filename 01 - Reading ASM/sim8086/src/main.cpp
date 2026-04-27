@@ -155,14 +155,37 @@ void decodeFile(const std::string& path)
     std::cout << "; " << path << " disassembly\n";
     std::cout << "bits 16\n\n";
 
+
+
     for (size_t i = 0; i < bytes.size();)
     {
-        if (i + 1 >= bytes.size())
+        // NOTE: For debugging only:
+        std::cerr << "i = " << i
+              << ", byte = " << static_cast<int>(bytes[i])
+              << '\n';
+
+        DecodeInstruction instruction;
+        if (isMovRegisterMemoryToFromRegister(bytes[i]))
         {
-            throw std::runtime_error("Unexpected end of file while decoding instruction.");
+            if (i + 1 >= bytes.size())
+            {
+                throw std::runtime_error("Unexpected end of file while decoding instruction.");
+            }
+
+            std::cerr << "  decoder: mov reg/mem to/from reg\n";
+
+            instruction = decodeMovRegisterToRegister(bytes[i], bytes[i + 1]);
+        }
+        else if (isMovImmediateToRegister(bytes[i]))
+        {
+            std::cerr << "  decoder: mov immediate to register\n";
+            instruction = decodeMovImmediateToRegister(bytes, i);
+        }
+        else
+        {
+            throw std::runtime_error("Instruction is not supported.");
         }
 
-        DecodeInstruction instruction = decodeMovRegisterToRegister(bytes[i], bytes[i + 1]);
 
         std::cout << instruction.mnemonic << ' '
                   << instruction.destination << ", "
