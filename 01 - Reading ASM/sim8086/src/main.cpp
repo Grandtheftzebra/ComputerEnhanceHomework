@@ -57,8 +57,31 @@ bool isMovRegisterMemoryToFromRegister(const uint8_t byte1)
     return (byte1 >> 2) == 0b100010;
 }
 
-DecodeInstruction decodeMovRegisterToRegister(const uint8_t byte1, const uint8_t byte2)
+std::string getEffectiveAddressBase(const uint8_t rm)
 {
+    static const char* table[8] = {
+        "bx + si",
+        "bx + di",
+        "bp + si",
+        "bp + di",
+        "si",
+        "di",
+        "bp",
+        "bx"
+    };
+
+    if (rm > 7)
+    {
+        throw::std::runtime_error("Invalid r/m code");
+    }
+
+    return table[rm];
+}
+
+DecodeInstruction decodeMovRegisterMemoryToFromRegister(const std::vector<uint8_t>& bytes, const size_t index)
+{
+    const uint8_t byte1 = bytes[index];
+    const uint8_t byte2 = bytes[index + 1];
     if (!isMovRegisterMemoryToFromRegister(byte1))
     {
         throw std::runtime_error("Unsupported instruction (not a mov reg/mem-to/from-reg).");
@@ -71,17 +94,38 @@ DecodeInstruction decodeMovRegisterToRegister(const uint8_t byte1, const uint8_t
     const uint8_t reg = (byte2 >> 3) & 0b111;
     const uint8_t rm = byte2 & 0b111;
 
-    if (mod!= 0b11)
-    {
-        throw std::runtime_error("Unsupported mod (only register-to-register supported).");
-    }
-
     const std::string regOperand = getRegisterName(reg, w);
-    const std::string rmOperand = getRegisterName(rm, w);
+    std::string rmOperand;
+    size_t instructionSize = 2;
+
+    if (mod == 0b11)
+    {
+        rmOperand = getRegisterName(rm, w);
+    }
+    else if (mod == 0b01)
+    {
+        instructionSize = 3;
+        const uint8_t displacement = bytes[index + 2];
+
+        rmOperand = "[" + getEffectiveAddressBase(rm) + " + " + std::to_string(displacement) + "]";
+    }
+    else if (mod == 0b10)
+    {
+        instructionSize = 4;
+        const uint8_t lowByte = bytes[index + 2];
+        const uint8_t highByte = bytes[index + 3];
+        const uint16_t displacement = static_cast<uint16_t>(lowByte) | (static_cast<uint16_t>(highByte) << 8);
+
+        rmOperand = "[" + getEffectiveAddressBase(rm) + " + " + std::to_string(displacement) + "]";
+    }
+    else
+    {
+        rmOperand = "[" + getEffectiveAddressBase(rm) + "]";
+    }
 
     DecodeInstruction result;
     result.mnemonic = "mov";
-    result.size = 2;
+    result.size = instructionSize;
     if (d == 1)
     {
         result.destination = regOperand;
@@ -174,7 +218,7 @@ void decodeFile(const std::string& path)
 
             std::cerr << "  decoder: mov reg/mem to/from reg\n";
 
-            instruction = decodeMovRegisterToRegister(bytes[i], bytes[i + 1]);
+            instruction = decodeMovRegisterMemoryToFromRegister(bytes, i);
         }
         else if (isMovImmediateToRegister(bytes[i]))
         {
