@@ -1,6 +1,8 @@
-﻿#include <iostream>
+#include <iostream>
 #include <cstdint>
 #include <fstream>
+#include <map>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -10,9 +12,11 @@ struct DecodeInstruction
     std::string mnemonic;
     std::string destination;
     std::string source;
-    size_t size;
+    size_t size = 0;
+    size_t offset = 0;
+    bool hasJumpTarget = false;
+    int jumpTarget = 0;
 };
-
 
 std::vector<uint8_t> readBinaryFile(const std::string& path)
 {
@@ -38,6 +42,58 @@ std::vector<uint8_t> readBinaryFile(const std::string& path)
     return buffer;
 }
 
+void ensureBytesAvailable(const std::vector<uint8_t>& bytes, const size_t index, const size_t count, const char* context)
+{
+    // NOTE: Second check covers cases were index is valid,
+    // but there are not enough remaining bytes to read count bytes.
+    if (index > bytes.size() || count > bytes.size() - index)
+    {
+        throw std::runtime_error(std::string("Unexpected end of file while decoding ") + context);
+    }
+}
+
+uint16_t readU16(const std::vector<uint8_t>& bytes, const size_t index, const char* context)
+{
+    ensureBytesAvailable(bytes, index, 2, context);
+
+    const uint8_t lowByte = bytes[index];
+    const uint8_t highByte = bytes[index + 1];
+
+    return static_cast<uint16_t>(lowByte) | (static_cast<uint16_t>(highByte) << 8);
+}
+
+int8_t readI8(const std::vector<uint8_t>& bytes, const size_t index, const char* context)
+{
+    ensureBytesAvailable(bytes, index, 1, context);
+
+    return static_cast<int8_t>(bytes[index]);
+}
+
+int16_t readI16(const std::vector<uint8_t>& bytes, const size_t index, const char* context)
+{
+    return static_cast<int16_t>(readU16(bytes, index, context));
+}
+
+std::string formatSigned8(const uint8_t value)
+{
+    return std::to_string(static_cast<int>(static_cast<int8_t>(value)));
+}
+
+std::string formatSigned16(const uint16_t value)
+{
+    return std::to_string(static_cast<int>(static_cast<int16_t>(value)));
+}
+
+std::string formatDisplacement(const int displacement)
+{
+    if (displacement < 0)
+    {
+        return " - " + std::to_string(-displacement);
+    }
+
+    return " + " + std::to_string(displacement);
+}
+
 const char* getRegisterName(const uint8_t regCode, const uint8_t w)
 {
     static const char* reg8[8] =  {"al", "cl", "dl", "bl", "ah", "ch", "dh", "bh"};
@@ -49,12 +105,6 @@ const char* getRegisterName(const uint8_t regCode, const uint8_t w)
     }
 
     return (w == 0) ? reg8[regCode] : reg16[regCode];
-}
-
-
-bool isMovRegisterMemoryToFromRegister(const uint8_t byte1)
-{
-    return (byte1 >> 2) == 0b100010;
 }
 
 std::string getEffectiveAddressBase(const uint8_t rm)
@@ -72,16 +122,70 @@ std::string getEffectiveAddressBase(const uint8_t rm)
 
     if (rm > 7)
     {
-        throw::std::runtime_error("Invalid r/m code");
+        throw std::runtime_error("Invalid r/m code");
     }
 
     return table[rm];
 }
 
+std::string decodeRmOperand(
+    const std::vector<uint8_t>& bytes,
+    const size_t instructionIndex,
+    const uint8_t mod,
+    const uint8_t rm,
+    const uint8_t w,
+    const bool includeMemorySize,
+    size_t& instructionSize)
+{
+    if (mod == 0b11)
+    {
+        return getRegisterName(rm, w);
+    }
+
+    std::string operand;
+    if (mod == 0b00 && rm == 0b110)
+    {
+        const uint16_t address = readU16(bytes, instructionIndex + instructionSize, "direct address");
+        instructionSize += 2;
+        operand = "[" + std::to_string(address) + "]";
+    }
+    else if (mod == 0b00)
+    {
+        operand = "[" + getEffectiveAddressBase(rm) + "]";
+    }
+    else if (mod == 0b01)
+    {
+        const int8_t displacement = readI8(bytes, instructionIndex + instructionSize, "8-bit displacement");
+        instructionSize += 1;
+        operand = "[" + getEffectiveAddressBase(rm) + formatDisplacement(displacement) + "]";
+    }
+    else
+    {
+        const int16_t displacement = readI16(bytes, instructionIndex + instructionSize, "16-bit displacement");
+        instructionSize += 2;
+        operand = "[" + getEffectiveAddressBase(rm) + formatDisplacement(displacement) + "]";
+    }
+
+    if (includeMemorySize)
+    {
+        operand = std::string((w == 0) ? "byte " : "word ") + operand;
+    }
+
+    return operand;
+}
+
+bool isMovRegisterMemoryToFromRegister(const uint8_t byte1)
+{
+    return (byte1 >> 2) == 0b100010;
+}
+
 DecodeInstruction decodeMovRegisterMemoryToFromRegister(const std::vector<uint8_t>& bytes, const size_t index)
 {
+    ensureBytesAvailable(bytes, index, 2, "mov register/memory to/from register");
+
     const uint8_t byte1 = bytes[index];
     const uint8_t byte2 = bytes[index + 1];
+
     if (!isMovRegisterMemoryToFromRegister(byte1))
     {
         throw std::runtime_error("Unsupported instruction (not a mov reg/mem-to/from-reg).");
@@ -95,33 +199,8 @@ DecodeInstruction decodeMovRegisterMemoryToFromRegister(const std::vector<uint8_
     const uint8_t rm = byte2 & 0b111;
 
     const std::string regOperand = getRegisterName(reg, w);
-    std::string rmOperand;
     size_t instructionSize = 2;
-
-    if (mod == 0b11)
-    {
-        rmOperand = getRegisterName(rm, w);
-    }
-    else if (mod == 0b01)
-    {
-        instructionSize = 3;
-        const uint8_t displacement = bytes[index + 2];
-
-        rmOperand = "[" + getEffectiveAddressBase(rm) + " + " + std::to_string(displacement) + "]";
-    }
-    else if (mod == 0b10)
-    {
-        instructionSize = 4;
-        const uint8_t lowByte = bytes[index + 2];
-        const uint8_t highByte = bytes[index + 3];
-        const uint16_t displacement = static_cast<uint16_t>(lowByte) | (static_cast<uint16_t>(highByte) << 8);
-
-        rmOperand = "[" + getEffectiveAddressBase(rm) + " + " + std::to_string(displacement) + "]";
-    }
-    else
-    {
-        rmOperand = "[" + getEffectiveAddressBase(rm) + "]";
-    }
+    const std::string rmOperand = decodeRmOperand(bytes, index, mod, rm, w, false, instructionSize);
 
     DecodeInstruction result;
     result.mnemonic = "mov";
@@ -162,80 +241,374 @@ DecodeInstruction decodeMovImmediateToRegister(const std::vector<uint8_t>& bytes
 
     if (w == 0)
     {
-        if (index + 1 >= bytes.size())
-        {
-            throw std::runtime_error("unexpected end of file while decoding 8-bit immediate");
-        }
-
-        const uint8_t immediate = bytes[index + 1];
-
-        result.source = std::to_string(immediate);
+        ensureBytesAvailable(bytes, index + 1, 1, "8-bit immediate");
+        result.source = formatSigned8(bytes[index + 1]);
         result.size = 2;
     }
     else
     {
-        if (index + 2 >= bytes.size())
-        {
-            throw std::runtime_error("unexpected end of file while decoding 16-bit immediate");
-        }
+        const uint16_t immediate = readU16(bytes, index + 1, "16-bit immediate");
 
-        const uint8_t lowByte = bytes[index + 1];
-        const uint8_t highByte = bytes[index + 2];
-
-        const uint16_t immediate = static_cast<uint16_t>(lowByte) | (static_cast<uint16_t>(highByte) << 8);
-
-        result.source = std::to_string(immediate);
+        result.source = formatSigned16(immediate);
         result.size = 3;
     }
 
     return result;
 }
 
+const char* getArithmeticMnemonic(const uint8_t operation)
+{
+    switch (operation)
+    {
+        case 0b000: return "add";
+        case 0b101: return "sub";
+        case 0b111: return "cmp";
+        default: return nullptr;
+    }
+}
+
+bool isArithmeticRegisterMemoryToFromRegister(const uint8_t byte1)
+{
+    const uint8_t operation = (byte1 >> 3) & 0b111;
+
+    return ((byte1 & 0b11000100) == 0b00000000) && (getArithmeticMnemonic(operation) != nullptr);
+}
+
+DecodeInstruction decodeArithmeticRegisterMemoryToFromRegister(const std::vector<uint8_t>& bytes, const size_t index)
+{
+    ensureBytesAvailable(bytes, index, 2, "arithmetic register/memory to/from register");
+
+    const uint8_t byte1 = bytes[index];
+    const uint8_t byte2 = bytes[index + 1];
+
+    const uint8_t operation = (byte1 >> 3) & 0b111;
+    const char* mnemonic = getArithmeticMnemonic(operation);
+    if (mnemonic == nullptr)
+    {
+        throw std::runtime_error("Unsupported arithmetic instruction.");
+    }
+
+    const uint8_t d = (byte1 >> 1) & 0b1;
+    const uint8_t w = byte1 & 0b1;
+
+    const uint8_t mod = (byte2 >> 6) & 0b11;
+    const uint8_t reg = (byte2 >> 3) & 0b111;
+    const uint8_t rm = byte2 & 0b111;
+
+    const std::string regOperand = getRegisterName(reg, w);
+    size_t instructionSize = 2;
+    const std::string rmOperand = decodeRmOperand(bytes, index, mod, rm, w, false, instructionSize);
+
+    DecodeInstruction result;
+    result.mnemonic = mnemonic;
+    result.size = instructionSize;
+    if (d == 1)
+    {
+        result.destination = regOperand;
+        result.source = rmOperand;
+    }
+    else
+    {
+        result.destination = rmOperand;
+        result.source = regOperand;
+    }
+
+    return result;
+}
+
+bool isArithmeticImmediateToRegisterMemory(const uint8_t byte1)
+{
+    return (byte1 >> 2) == 0b100000;
+}
+
+DecodeInstruction decodeArithmeticImmediateToRegisterMemory(const std::vector<uint8_t>& bytes, const size_t index)
+{
+    ensureBytesAvailable(bytes, index, 2, "arithmetic immediate to register/memory");
+
+    const uint8_t byte1 = bytes[index];
+    const uint8_t byte2 = bytes[index + 1];
+
+    const uint8_t s = (byte1 >> 1) & 0b1;
+    const uint8_t w = byte1 & 0b1;
+
+    const uint8_t mod = (byte2 >> 6) & 0b11;
+    const uint8_t operation = (byte2 >> 3) & 0b111;
+    const uint8_t rm = byte2 & 0b111;
+
+    const char* mnemonic = getArithmeticMnemonic(operation);
+    if (mnemonic == nullptr)
+    {
+        throw std::runtime_error("Unsupported arithmetic immediate instruction.");
+    }
+
+    size_t instructionSize = 2;
+    const bool includeMemorySize = true;
+    const std::string destination = decodeRmOperand(bytes, index, mod, rm, w, includeMemorySize, instructionSize);
+
+    std::string source;
+    if (w == 0 || s == 1)
+    {
+        ensureBytesAvailable(bytes, index + instructionSize, 1, "8-bit immediate");
+        source = formatSigned8(bytes[index + instructionSize]);
+        instructionSize += 1;
+    }
+    else
+    {
+        const uint16_t immediate = readU16(bytes, index + instructionSize, "16-bit immediate");
+        source = formatSigned16(immediate);
+        instructionSize += 2;
+    }
+
+    DecodeInstruction result;
+    result.mnemonic = mnemonic;
+    result.destination = destination;
+    result.source = source;
+    result.size = instructionSize;
+
+    return result;
+}
+
+bool isArithmeticImmediateToAccumulator(const uint8_t byte1)
+{
+    const uint8_t operation = (byte1 >> 3) & 0b111;
+
+    return ((byte1 & 0b11000110) == 0b00000100) && (getArithmeticMnemonic(operation) != nullptr);
+}
+
+DecodeInstruction decodeArithmeticImmediateToAccumulator(const std::vector<uint8_t>& bytes, const size_t index)
+{
+    const uint8_t byte1 = bytes[index];
+
+    const uint8_t operation = (byte1 >> 3) & 0b111;
+    const char* mnemonic = getArithmeticMnemonic(operation);
+    if (mnemonic == nullptr)
+    {
+        throw std::runtime_error("Unsupported arithmetic accumulator instruction.");
+    }
+
+    const uint8_t w = byte1 & 0b1;
+
+    DecodeInstruction result;
+    result.mnemonic = mnemonic;
+    result.destination = (w == 0) ? "al" : "ax";
+
+    if (w == 0)
+    {
+        ensureBytesAvailable(bytes, index + 1, 1, "8-bit accumulator immediate");
+        result.source = formatSigned8(bytes[index + 1]);
+        result.size = 2;
+    }
+    else
+    {
+        const uint16_t immediate = readU16(bytes, index + 1, "16-bit accumulator immediate");
+        result.source = formatSigned16(immediate);
+        result.size = 3;
+    }
+
+    return result;
+}
+
+const char* getJumpMnemonic(const uint8_t byte1)
+{
+    switch (byte1)
+    {
+        case 0x70: return "jo";
+        case 0x71: return "jno";
+        case 0x72: return "jb";
+        case 0x73: return "jnb";
+        case 0x74: return "je";
+        case 0x75: return "jnz";
+        case 0x76: return "jbe";
+        case 0x77: return "ja";
+        case 0x78: return "js";
+        case 0x79: return "jns";
+        case 0x7A: return "jp";
+        case 0x7B: return "jnp";
+        case 0x7C: return "jl";
+        case 0x7D: return "jnl";
+        case 0x7E: return "jle";
+        case 0x7F: return "jg";
+        case 0xE0: return "loopnz";
+        case 0xE1: return "loopz";
+        case 0xE2: return "loop";
+        case 0xE3: return "jcxz";
+        default: return nullptr;
+    }
+}
+
+bool isJump(const uint8_t byte1)
+{
+    return getJumpMnemonic(byte1) != nullptr;
+}
+
+DecodeInstruction decodeJump(const std::vector<uint8_t>& bytes, const size_t index)
+{
+    ensureBytesAvailable(bytes, index, 2, "short jump");
+
+    const uint8_t byte1 = bytes[index];
+    const int8_t displacement = readI8(bytes, index + 1, "jump displacement");
+
+    DecodeInstruction result;
+    result.mnemonic = getJumpMnemonic(byte1);
+    result.destination = std::to_string(static_cast<int>(displacement));
+    result.size = 2;
+    result.hasJumpTarget = true;
+    result.jumpTarget = static_cast<int>(index) + static_cast<int>(result.size) + static_cast<int>(displacement);
+
+    return result;
+}
+
+DecodeInstruction decodeInstruction(const std::vector<uint8_t>& bytes, const size_t index)
+{
+    const uint8_t byte1 = bytes[index];
+
+    DecodeInstruction instruction;
+    if (isMovRegisterMemoryToFromRegister(byte1))
+    {
+        instruction = decodeMovRegisterMemoryToFromRegister(bytes, index);
+    }
+    else if (isMovImmediateToRegister(byte1))
+    {
+        instruction = decodeMovImmediateToRegister(bytes, index);
+    }
+    else if (isArithmeticRegisterMemoryToFromRegister(byte1))
+    {
+        instruction = decodeArithmeticRegisterMemoryToFromRegister(bytes, index);
+    }
+    else if (isArithmeticImmediateToRegisterMemory(byte1))
+    {
+        instruction = decodeArithmeticImmediateToRegisterMemory(bytes, index);
+    }
+    else if (isArithmeticImmediateToAccumulator(byte1))
+    {
+        instruction = decodeArithmeticImmediateToAccumulator(bytes, index);
+    }
+    else if (isJump(byte1))
+    {
+        instruction = decodeJump(bytes, index);
+    }
+    else
+    {
+        throw std::runtime_error("Instruction is not supported.");
+    }
+
+    instruction.offset = index;
+
+    return instruction;
+}
+
+std::vector<DecodeInstruction> decodeInstructions(const std::vector<uint8_t>& bytes)
+{
+    std::vector<DecodeInstruction> instructions;
+
+    for (size_t i = 0; i < bytes.size();)
+    {
+        DecodeInstruction instruction = decodeInstruction(bytes, i);
+        i += instruction.size;
+        instructions.push_back(instruction);
+    }
+
+    return instructions;
+}
+
+std::map<size_t, std::string> buildJumpLabels(
+    const std::vector<DecodeInstruction>& instructions,
+    const size_t fileSize)
+{
+    std::set<size_t> instructionOffsets;
+    for (const DecodeInstruction& instruction : instructions)
+    {
+        instructionOffsets.insert(instruction.offset);
+    }
+
+    std::set<size_t> targetOffsets;
+    for (const DecodeInstruction& instruction : instructions)
+    {
+        if (!instruction.hasJumpTarget || instruction.jumpTarget < 0)
+        {
+            continue;
+        }
+
+        const size_t targetOffset = static_cast<size_t>(instruction.jumpTarget);
+        if (instructionOffsets.contains(targetOffset) || targetOffset == fileSize)
+        {
+            targetOffsets.insert(targetOffset);
+        }
+    }
+
+    std::map<size_t, std::string> labels;
+    int labelIndex = 0;
+    for (const size_t targetOffset : targetOffsets)
+    {
+        labels[targetOffset] = "label" + std::to_string(labelIndex);
+        ++labelIndex;
+    }
+
+    return labels;
+}
+
+void applyJumpLabels(
+    std::vector<DecodeInstruction>& instructions,
+    const std::map<size_t, std::string>& labels)
+{
+    for (DecodeInstruction& instruction : instructions)
+    {
+        if (!instruction.hasJumpTarget || instruction.jumpTarget < 0)
+        {
+            continue;
+        }
+
+        const auto label = labels.find(static_cast<size_t>(instruction.jumpTarget));
+        if (label != labels.end())
+        {
+            instruction.destination = label->second;
+        }
+    }
+}
+
+void printInstruction(const DecodeInstruction& instruction)
+{
+    std::cout << instruction.mnemonic;
+
+    if (!instruction.destination.empty())
+    {
+        std::cout << ' ' << instruction.destination;
+
+        if (!instruction.source.empty())
+        {
+            std::cout << ", " << instruction.source;
+        }
+    }
+
+    std::cout << '\n';
+}
+
 void decodeFile(const std::string& path)
 {
     const std::vector<uint8_t> bytes = readBinaryFile(path);
+    std::vector<DecodeInstruction> instructions = decodeInstructions(bytes);
+    const std::map<size_t, std::string> labels = buildJumpLabels(instructions, bytes.size());
+    applyJumpLabels(instructions, labels);
 
     // NOTE: NASM comment
     std::cout << "; " << path << " disassembly\n";
     std::cout << "bits 16\n\n";
 
-
-
-    for (size_t i = 0; i < bytes.size();)
+    for (const DecodeInstruction& instruction : instructions)
     {
-        // NOTE: For debugging only:
-        std::cerr << "i = " << i
-              << ", byte = " << static_cast<int>(bytes[i])
-              << '\n';
-
-        DecodeInstruction instruction;
-        if (isMovRegisterMemoryToFromRegister(bytes[i]))
+        const auto label = labels.find(instruction.offset);
+        if (label != labels.end())
         {
-            if (i + 1 >= bytes.size())
-            {
-                throw std::runtime_error("Unexpected end of file while decoding instruction.");
-            }
-
-            std::cerr << "  decoder: mov reg/mem to/from reg\n";
-
-            instruction = decodeMovRegisterMemoryToFromRegister(bytes, i);
-        }
-        else if (isMovImmediateToRegister(bytes[i]))
-        {
-            std::cerr << "  decoder: mov immediate to register\n";
-            instruction = decodeMovImmediateToRegister(bytes, i);
-        }
-        else
-        {
-            throw std::runtime_error("Instruction is not supported.");
+            std::cout << '\n' << label->second << ":\n";
         }
 
+        printInstruction(instruction);
+    }
 
-        std::cout << instruction.mnemonic << ' '
-                  << instruction.destination << ", "
-                  << instruction.source << '\n';
-
-        i += instruction.size;
+    const auto endLabel = labels.find(bytes.size());
+    if (endLabel != labels.end())
+    {
+        std::cout << '\n' << endLabel->second << ":\n";
     }
 }
 
