@@ -143,6 +143,7 @@ std::string decodeRmOperand(
     }
 
     std::string operand;
+    // Special Case: direct 16 bit address
     if (mod == 0b00 && rm == 0b110)
     {
         const uint16_t address = readU16(bytes, instructionIndex + instructionSize, "direct address");
@@ -174,9 +175,9 @@ std::string decodeRmOperand(
     return operand;
 }
 
-bool isMovRegisterMemoryToFromRegister(const uint8_t byte1)
+bool isMovRegisterMemoryToFromRegister(const uint8_t byte)
 {
-    return (byte1 >> 2) == 0b100010;
+    return (byte >> 2) == 0b100010;
 }
 
 DecodeInstruction decodeMovRegisterMemoryToFromRegister(const std::vector<uint8_t>& bytes, const size_t index)
@@ -199,6 +200,8 @@ DecodeInstruction decodeMovRegisterMemoryToFromRegister(const std::vector<uint8_
     const uint8_t rm = byte2 & 0b111;
 
     const std::string regOperand = getRegisterName(reg, w);
+    // NOTE: instructionSize starts at 2 becuase byte1 & byte2 were already consumed.
+    // decodeRmOperarnd may add displacement bytes.
     size_t instructionSize = 2;
     const std::string rmOperand = decodeRmOperand(bytes, index, mod, rm, w, false, instructionSize);
 
@@ -346,7 +349,7 @@ DecodeInstruction decodeArithmeticImmediateToRegisterMemory(const std::vector<ui
     const std::string destination = decodeRmOperand(bytes, index, mod, rm, w, includeMemorySize, instructionSize);
 
     std::string source;
-    if (w == 0 || s == 1)
+    if (s == 1 || w == 0)
     {
         ensureBytesAvailable(bytes, index + instructionSize, 1, "8-bit immediate");
         source = formatSigned8(bytes[index + instructionSize]);
@@ -410,28 +413,24 @@ DecodeInstruction decodeArithmeticImmediateToAccumulator(const std::vector<uint8
 
 const char* getJumpMnemonic(const uint8_t byte1)
 {
+    static const char* conditionalJumps[16] = {
+        "jo", "jno", "jb", "jnb",
+        "je", "jnz", "jbe", "ja",
+        "js", "jns", "jp", "jnp",
+        "jl", "jnl", "jle", "jg"
+    };
+
+    if ((byte1 & 0b11110000) == 0b01110000)
+    {
+        return conditionalJumps[byte1 & 0b00001111];
+    }
+
     switch (byte1)
     {
-        case 0x70: return "jo";
-        case 0x71: return "jno";
-        case 0x72: return "jb";
-        case 0x73: return "jnb";
-        case 0x74: return "je";
-        case 0x75: return "jnz";
-        case 0x76: return "jbe";
-        case 0x77: return "ja";
-        case 0x78: return "js";
-        case 0x79: return "jns";
-        case 0x7A: return "jp";
-        case 0x7B: return "jnp";
-        case 0x7C: return "jl";
-        case 0x7D: return "jnl";
-        case 0x7E: return "jle";
-        case 0x7F: return "jg";
-        case 0xE0: return "loopnz";
-        case 0xE1: return "loopz";
-        case 0xE2: return "loop";
-        case 0xE3: return "jcxz";
+        case 0b11100000: return "loopnz";
+        case 0b11100001: return "loopz";
+        case 0b11100010: return "loop";
+        case 0b11100011: return "jcxz";
         default: return nullptr;
     }
 }
