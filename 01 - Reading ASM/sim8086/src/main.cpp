@@ -200,8 +200,8 @@ DecodeInstruction decodeMovRegisterMemoryToFromRegister(const std::vector<uint8_
     const uint8_t rm = byte2 & 0b111;
 
     const std::string regOperand = getRegisterName(reg, w);
-    // NOTE: instructionSize starts at 2 becuase byte1 & byte2 were already consumed.
-    // decodeRmOperarnd may add displacement bytes.
+    // NOTE: instructionSize starts at 2 because byte1 & byte2 were already consumed.
+    // decodeRmOperand may add displacement bytes.
     size_t instructionSize = 2;
     const std::string rmOperand = decodeRmOperand(bytes, index, mod, rm, w, false, instructionSize);
 
@@ -528,7 +528,7 @@ std::map<size_t, std::string> buildJumpLabels(
             continue;
         }
 
-        const size_t targetOffset = static_cast<size_t>(instruction.jumpTarget);
+        const auto targetOffset = static_cast<size_t>(instruction.jumpTarget);
         if (instructionOffsets.contains(targetOffset) || targetOffset == fileSize)
         {
             targetOffsets.insert(targetOffset);
