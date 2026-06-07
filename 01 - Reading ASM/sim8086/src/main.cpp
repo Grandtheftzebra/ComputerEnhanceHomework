@@ -1,19 +1,21 @@
+#include <array>
 #include <iostream>
 #include <cstdint>
 #include <fstream>
+#include <iomanip>
 #include <map>
 #include <set>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
-enum class OperandKind {Register, Immediate};
+enum class OperandKind {Register, Immediate, Memory};
 
 struct Operand
 {
-    OperandKind kind;
-    uint8_t registerIndex; // used when kind == Register
-    uint16_t immediateValue; // used when kind == Immediate
+    OperandKind kind = OperandKind::Register;
+    uint8_t registerIndex = 0; // used when kind == Register
+    uint16_t immediateValue = 0; // used when kind == Immediate
 };
 
 struct DecodeInstruction
@@ -21,8 +23,13 @@ struct DecodeInstruction
     std::string mnemonic;
     std::string destination;
     std::string source;
+
+    Operand destinationOperand;
+    Operand sourceOperand;
+
     size_t size = 0;
     size_t offset = 0;
+
     bool hasJumpTarget = false;
     int jumpTarget = 0;
 };
@@ -217,29 +224,53 @@ DecodeInstruction decodeMovRegisterMemoryToFromRegister(const std::vector<uint8_
     DecodeInstruction result;
     result.mnemonic = "mov";
     result.size = instructionSize;
+
+    // Reg field is unconditionally a register
+    Operand regAsOperand;
+    regAsOperand.kind = OperandKind::Register;
+    regAsOperand.registerIndex = reg;
+
+    // rm field is only a register when mod == 0b11; otherwise it's memory
+    Operand rmAsOperand;
+    if (mod == 0b11)
+    {
+        rmAsOperand.kind = OperandKind::Register;
+        rmAsOperand.registerIndex = rm;
+    }
+    else
+    {
+        rmAsOperand.kind = OperandKind::Memory;
+    }
+
     if (d == 1)
     {
         result.destination = regOperand;
         result.source = rmOperand;
+
+        result.destinationOperand = regAsOperand;
+        result.sourceOperand = rmAsOperand;
     }
     else
     {
         result.destination = rmOperand;
         result.source = regOperand;
+
+        result.destinationOperand = rmAsOperand;
+        result.sourceOperand = regAsOperand;
     }
 
     return result;
 }
 
-bool isMovImmediateToRegister(const uint8_t byte1)
+bool IsMovImmediateToRegister(const uint8_t byte1)
 {
     return (byte1 >> 4) == 0b1011;
 }
 
-DecodeInstruction decodeMovImmediateToRegister(const std::vector<uint8_t>& bytes, const size_t index)
+DecodeInstruction DecodeMovImmediateToRegister(const std::vector<uint8_t>& bytes, const size_t index)
 {
     const uint8_t byte1 = bytes[index];
-    if (!isMovImmediateToRegister(byte1))
+    if (!IsMovImmediateToRegister(byte1))
     {
         throw std::runtime_error("Unsupported instruction not a mov Immediate to Register instruction.");
     }
@@ -249,18 +280,27 @@ DecodeInstruction decodeMovImmediateToRegister(const std::vector<uint8_t>& bytes
 
     DecodeInstruction result;
     result.mnemonic = "mov";
+
+    result.destinationOperand.kind = OperandKind::Register;
+    result.destinationOperand.registerIndex = reg;
     result.destination = getRegisterName(reg, w);
+
+    result.sourceOperand.kind = OperandKind::Immediate;
 
     if (w == 0)
     {
         ensureBytesAvailable(bytes, index + 1, 1, "8-bit immediate");
-        result.source = formatSigned8(bytes[index + 1]);
+        const uint8_t immediate = bytes[index + 1];
+
+        result.sourceOperand.immediateValue = immediate;
+        result.source = formatSigned8(immediate);
         result.size = 2;
     }
     else
     {
         const uint16_t immediate = readU16(bytes, index + 1, "16-bit immediate");
 
+        result.sourceOperand.immediateValue = immediate;
         result.source = formatSigned16(immediate);
         result.size = 3;
     }
@@ -475,9 +515,9 @@ DecodeInstruction decodeInstruction(const std::vector<uint8_t>& bytes, const siz
     {
         instruction = decodeMovRegisterMemoryToFromRegister(bytes, index);
     }
-    else if (isMovImmediateToRegister(byte1))
+    else if (IsMovImmediateToRegister(byte1))
     {
-        instruction = decodeMovImmediateToRegister(bytes, index);
+        instruction = DecodeMovImmediateToRegister(bytes, index);
     }
     else if (isArithmeticRegisterMemoryToFromRegister(byte1))
     {
@@ -635,23 +675,64 @@ void DecodeFile(const std::string& path)
     }
 }
 
+uint16_t ReadOperandValue(const std::array<uint16_t, 8>& registers, const Operand& operand)
+{
+    switch (operand.kind)
+    {
+        case OperandKind::Register: return registers[operand.registerIndex];
+        case OperandKind::Immediate: return operand.immediateValue;
+        case OperandKind::Memory: throw std::runtime_error("Not yet implemented");
+        default: throw std::runtime_error("Couldn't find specified Operand Kind.");
+    }
+}
+
+void ExecuteInstruction(std::array<uint16_t, 8>& registers, const DecodeInstruction& instruction)
+{
+    if (instruction.destinationOperand.kind != OperandKind::Register) throw std::runtime_error("Destination Operand must be a Register");
+    if (instruction.mnemonic != "mov") throw std::runtime_error("Unsupported mnemonic. Only support mov currently.");
+
+    const uint16_t source = ReadOperandValue(registers, instruction.sourceOperand);
+
+    registers[instruction.destinationOperand.registerIndex] = source;
+}
+
+void SimulateFile(const std::string& path)
+{
+    const std::vector<DecodeInstruction> instructions = ReadAndDecode(path);
+    std::array<uint16_t, 8> registers{};
+
+    for (const DecodeInstruction& instruction : instructions)
+    {
+        ExecuteInstruction(registers, instruction);
+    }
+
+    for (size_t i = 0; i < registers.size(); ++i)
+    {
+        std::cout << "      " << getRegisterName(static_cast<uint8_t>(i), 1) << ": 0x"
+                  << std::hex << std::setfill('0') << std::setw(4) << registers[i]
+                  << " (" << std::dec << registers[i] << ")\n";
+    }
+}
+
 // argc = argument count, argv = argument vector - C Style string array.
 int main(int argc, char** argv)
 {
     try
     {
-        // No binary file name specified, just: .\cmake-build-debug\sim8086.exe
-        if (argc < 2)
+        if (argc == 2)
         {
-            std::cerr << "Usage: sim8086 <binary-file>\n";
-
+            DecodeFile(argv[1]);
+        }
+        else if (argc == 3 && std::string(argv[1]) == "-exec")
+        {
+            SimulateFile(argv[2]);
+        }
+        // No binary file name specified, just: .\cmake-build-debug\sim8086.exe
+        else
+        {
+            std::cerr << "Usage: sim8086 [-exec] <binary-file>\n";
             return 1;
         }
-
-        // given: .\cmake-build-debug\sim8086.exe .\data\listing_0037 in the terminal:
-        // argv[0] = sim8086.exe
-        // argv[1] = .\data\listing_0037
-        DecodeFile(argv[1]);
 
         return 0;
     }
