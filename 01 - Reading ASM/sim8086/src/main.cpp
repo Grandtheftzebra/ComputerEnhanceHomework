@@ -18,7 +18,7 @@ struct DecodeInstruction
     int jumpTarget = 0;
 };
 
-std::vector<uint8_t> readBinaryFile(const std::string& path)
+std::vector<uint8_t> ReadBinaryFile(const std::string& path)
 {
     std::ifstream file(path, std::ios::binary);
 
@@ -496,7 +496,7 @@ DecodeInstruction decodeInstruction(const std::vector<uint8_t>& bytes, const siz
     return instruction;
 }
 
-std::vector<DecodeInstruction> decodeInstructions(const std::vector<uint8_t>& bytes)
+std::vector<DecodeInstruction> DecodeInstructions(const std::vector<uint8_t>& bytes)
 {
     std::vector<DecodeInstruction> instructions;
 
@@ -510,7 +510,7 @@ std::vector<DecodeInstruction> decodeInstructions(const std::vector<uint8_t>& by
     return instructions;
 }
 
-std::map<size_t, std::string> buildJumpLabels(
+std::map<size_t, std::string> BuildJumpLabels(
     const std::vector<DecodeInstruction>& instructions,
     const size_t fileSize)
 {
@@ -546,7 +546,7 @@ std::map<size_t, std::string> buildJumpLabels(
     return labels;
 }
 
-void applyJumpLabels(
+void ApplyJumpLabels(
     std::vector<DecodeInstruction>& instructions,
     const std::map<size_t, std::string>& labels)
 {
@@ -565,7 +565,7 @@ void applyJumpLabels(
     }
 }
 
-void printInstruction(const DecodeInstruction& instruction)
+void PrintInstruction(const DecodeInstruction& instruction)
 {
     std::cout << instruction.mnemonic;
 
@@ -582,12 +582,29 @@ void printInstruction(const DecodeInstruction& instruction)
     std::cout << '\n';
 }
 
-void decodeFile(const std::string& path)
+std::vector<DecodeInstruction> ReadAndDecode(const std::string& path)
 {
-    const std::vector<uint8_t> bytes = readBinaryFile(path);
-    std::vector<DecodeInstruction> instructions = decodeInstructions(bytes);
-    const std::map<size_t, std::string> labels = buildJumpLabels(instructions, bytes.size());
-    applyJumpLabels(instructions, labels);
+    const std::vector<uint8_t> bytes = ReadBinaryFile(path);
+
+    return DecodeInstructions(bytes);
+}
+
+size_t GetProgramFileSize(const std::vector<DecodeInstruction>& instructions)
+{
+    if (instructions.empty()) return 0;
+
+    const DecodeInstruction& last = instructions.back();
+
+    return last.offset + last.size;
+}
+
+void DecodeFile(const std::string& path)
+{
+    std::vector<DecodeInstruction> instructions = ReadAndDecode(path);
+    const size_t fileSize = GetProgramFileSize(instructions);
+
+    const std::map<size_t, std::string> labels = BuildJumpLabels(instructions, fileSize);
+    ApplyJumpLabels(instructions, labels);
 
     // NOTE: NASM comment
     std::cout << "; " << path << " disassembly\n";
@@ -595,17 +612,15 @@ void decodeFile(const std::string& path)
 
     for (const DecodeInstruction& instruction : instructions)
     {
-        const auto label = labels.find(instruction.offset);
-        if (label != labels.end())
+        if (const auto label = labels.find(instruction.offset); label != labels.end())
         {
             std::cout << '\n' << label->second << ":\n";
         }
 
-        printInstruction(instruction);
+        PrintInstruction(instruction);
     }
 
-    const auto endLabel = labels.find(bytes.size());
-    if (endLabel != labels.end())
+    if (const auto endLabel = labels.find(fileSize); endLabel != labels.end())
     {
         std::cout << '\n' << endLabel->second << ":\n";
     }
@@ -627,7 +642,7 @@ int main(int argc, char** argv)
         // given: .\cmake-build-debug\sim8086.exe .\data\listing_0037 in the terminal:
         // argv[0] = sim8086.exe
         // argv[1] = .\data\listing_0037
-        decodeFile(argv[1]);
+        DecodeFile(argv[1]);
 
         return 0;
     }
