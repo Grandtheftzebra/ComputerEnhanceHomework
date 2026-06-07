@@ -7,6 +7,15 @@
 #include <string>
 #include <vector>
 
+enum class OperandKind {Register, Immediate};
+
+struct Operand
+{
+    OperandKind kind;
+    uint8_t registerIndex; // used when kind == Register
+    uint16_t immediateValue; // used when kind == Immediate
+};
+
 struct DecodeInstruction
 {
     std::string mnemonic;
