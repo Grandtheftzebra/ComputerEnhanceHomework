@@ -699,7 +699,7 @@ void ExecuteInstruction(std::array<uint16_t, 8>& registers, const DecodeInstruct
 void SimulateFile(const std::string& path)
 {
     const std::vector<DecodeInstruction> instructions = ReadAndDecode(path);
-    std::array<uint16_t, 8> registers{};
+    std::array<uint16_t, 8> registers {};
 
     for (const DecodeInstruction& instruction : instructions)
     {
