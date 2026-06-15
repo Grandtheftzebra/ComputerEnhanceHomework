@@ -354,15 +354,39 @@ DecodeInstruction decodeArithmeticRegisterMemoryToFromRegister(const std::vector
     DecodeInstruction result;
     result.mnemonic = mnemonic;
     result.size = instructionSize;
+
+    // reg field is unconditionally a register
+    Operand regAsOperand {};
+    regAsOperand.kind = OperandKind::Register;
+    regAsOperand.registerIndex = reg;
+
+    // rm field is only a register when mod == 0b11; otherwise it's memory
+    Operand rmAsOperand {};
+    if (mod == 0b11)
+    {
+        rmAsOperand.kind = OperandKind::Register;
+        rmAsOperand.registerIndex = rm;
+    }
+    else
+    {
+        rmAsOperand.kind = OperandKind::Memory;
+    }
+
     if (d == 1)
     {
         result.destination = regOperand;
         result.source = rmOperand;
+
+        result.destinationOperand = regAsOperand;
+        result.sourceOperand = rmAsOperand;
     }
     else
     {
         result.destination = rmOperand;
         result.source = regOperand;
+
+        result.destinationOperand = rmAsOperand;
+        result.sourceOperand = regAsOperand;
     }
 
     return result;
@@ -690,12 +714,27 @@ void ExecuteInstruction(std::array<uint16_t, 8>& registers, const DecodeInstruct
 {
     if (instruction.destinationOperand.kind != OperandKind::Register) throw std::runtime_error("Destination Operand must be a Register");
 
-    // TODO: Create separation for add, sub, cmp
-    if (instruction.mnemonic != "mov") throw std::runtime_error("Unsupported mnemonic. Only support mov currently.");
-
-    const uint16_t source = ReadOperandValue(registers, instruction.sourceOperand);
-
-    registers[instruction.destinationOperand.registerIndex] = source;
+    if (instruction.mnemonic == "mov")
+    {
+        const uint16_t source = ReadOperandValue(registers, instruction.sourceOperand);
+        registers[instruction.destinationOperand.registerIndex] = source;
+    }
+    else if (instruction.mnemonic == "add")
+    {
+        throw std::runtime_error("add not supported yet.");
+    }
+    else if (instruction.mnemonic == "sub")
+    {
+        // TODO: Implement sub logic
+    }
+    else if (instruction.mnemonic == "cmp")
+    {
+        throw std::runtime_error("cmp not supported yet.");
+    }
+    else
+    {
+        throw std::runtime_error("Unsupported mnemonic: " + instruction.mnemonic);
+    }
 }
 
 void SimulateFile(const std::string& path)
