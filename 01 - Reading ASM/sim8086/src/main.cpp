@@ -689,6 +689,8 @@ uint16_t ReadOperandValue(const std::array<uint16_t, 8>& registers, const Operan
 void ExecuteInstruction(std::array<uint16_t, 8>& registers, const DecodeInstruction& instruction)
 {
     if (instruction.destinationOperand.kind != OperandKind::Register) throw std::runtime_error("Destination Operand must be a Register");
+
+    // TODO: Create separation for add, sub, cmp
     if (instruction.mnemonic != "mov") throw std::runtime_error("Unsupported mnemonic. Only support mov currently.");
 
     const uint16_t source = ReadOperandValue(registers, instruction.sourceOperand);
