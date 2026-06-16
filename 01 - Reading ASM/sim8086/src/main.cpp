@@ -11,6 +11,15 @@
 
 enum class OperandKind {Register, Immediate, Memory};
 
+enum class MnemonicType
+{
+    mov,
+    add,
+    sub,
+    cmp,
+    unknown
+};
+
 struct Operand
 {
     OperandKind kind = OperandKind::Register;
@@ -725,7 +734,12 @@ void ExecuteInstruction(std::array<uint16_t, 8>& registers, const DecodeInstruct
     }
     else if (instruction.mnemonic == "sub")
     {
-        // TODO: Implement sub logic
+        const uint16_t destinationValue = registers[instruction.destinationOperand.registerIndex];
+        const uint16_t sourceValue = registers[instruction.sourceOperand.registerIndex];
+
+        const uint16_t result = destinationValue - sourceValue;
+
+        registers[instruction.destinationOperand.registerIndex] = result;
     }
     else if (instruction.mnemonic == "cmp")
     {
