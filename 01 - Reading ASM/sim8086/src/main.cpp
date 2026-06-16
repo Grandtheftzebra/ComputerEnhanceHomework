@@ -754,6 +754,35 @@ void ExecuteInstruction(std::array<uint16_t, 8>& registers, const DecodeInstruct
     }
 }
 
+void PrintInstruction(const DecodeInstruction& instruction, const bool newline = true)
+{
+    std::cout << instruction.mnemonic;
+
+    if (!instruction.destination.empty())
+    {
+        std::cout << ' ' << instruction.destination;
+
+        if (!instruction.source.empty())
+        {
+            std::cout << ", " << instruction.source;
+        }
+    }
+
+    if (newline)
+    {
+        std::cout << '\n';
+    }
+}
+
+std::string FormatFlags(const bool zeroFlag, const bool signFlag)
+{
+    std::string flags;
+    if (zeroFlag) flags += 'Z';
+    if (signFlag) flags += 'S';
+
+    return flags;
+}
+
 void SimulateFile(const std::string& path)
 {
     const std::vector<DecodeInstruction> instructions = ReadAndDecode(path);
@@ -764,14 +793,40 @@ void SimulateFile(const std::string& path)
 
     for (const DecodeInstruction& instruction : instructions)
     {
-        ExecuteInstruction(registers, instruction, zeroFlag, signFlag);
-    }
+        const std::array<uint16_t, 8> beforeRegisters = registers;
+        const bool beforeZeroFlag = zeroFlag;
+        const bool beforeSignFlag = signFlag;
 
-    for (size_t i = 0; i < registers.size(); ++i)
-    {
-        std::cout << "      " << getRegisterName(static_cast<uint8_t>(i), 1) << ": 0x"
-                  << std::hex << std::setfill('0') << std::setw(4) << registers[i]
-                  << " (" << std::dec << registers[i] << ")\n";
+        ExecuteInstruction(registers, instruction, zeroFlag, signFlag);
+
+        PrintInstruction(instruction, false);
+
+        bool printedChange = false;
+        for (size_t i = 0; i < registers.size(); ++i)
+        {
+            if (beforeRegisters[i] == registers[i]) continue;
+
+            if (!printedChange)
+            {
+                std::cout << " ;";
+                printedChange = true;
+            }
+
+            std::cout << ' ' << getRegisterName(static_cast<uint8_t>(i), 1)
+                      << ":0x" << std::hex << beforeRegisters[i]
+                      << "->0x" << registers[i] << std::dec;
+        }
+
+        const std::string beforeFlags = FormatFlags(beforeZeroFlag, beforeSignFlag);
+        const std::string afterFlags = FormatFlags(zeroFlag, signFlag);
+
+        if (beforeFlags != afterFlags)
+        {
+            if (!printedChange) std::cout << " ;";
+            std::cout << " flags:" << beforeFlags << "->" << afterFlags;
+        }
+
+        std::cout << '\n';
     }
 }
 
