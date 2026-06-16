@@ -11,6 +11,7 @@
 
 enum class OperandKind {Register, Immediate, Memory};
 
+// NOTE: Not used currently, but better than using strings in the future.
 enum class MnemonicType
 {
     mov,
@@ -719,7 +720,7 @@ uint16_t ReadOperandValue(const std::array<uint16_t, 8>& registers, const Operan
     }
 }
 
-void ExecuteInstruction(std::array<uint16_t, 8>& registers, const DecodeInstruction& instruction)
+void ExecuteInstruction(std::array<uint16_t, 8>& registers, const DecodeInstruction& instruction, bool& zeroFlag, bool& signFlag)
 {
     if (instruction.destinationOperand.kind != OperandKind::Register) throw std::runtime_error("Destination Operand must be a Register");
 
@@ -734,10 +735,12 @@ void ExecuteInstruction(std::array<uint16_t, 8>& registers, const DecodeInstruct
     }
     else if (instruction.mnemonic == "sub")
     {
-        const uint16_t destinationValue = registers[instruction.destinationOperand.registerIndex];
-        const uint16_t sourceValue = registers[instruction.sourceOperand.registerIndex];
+        const uint16_t destinationValue = ReadOperandValue(registers, instruction.destinationOperand);
+        const uint16_t sourceValue = ReadOperandValue(registers, instruction.sourceOperand);
 
         const uint16_t result = destinationValue - sourceValue;
+        zeroFlag = result == 0;
+        signFlag = (result >> 15) & 0b1;
 
         registers[instruction.destinationOperand.registerIndex] = result;
     }
@@ -756,9 +759,12 @@ void SimulateFile(const std::string& path)
     const std::vector<DecodeInstruction> instructions = ReadAndDecode(path);
     std::array<uint16_t, 8> registers {};
 
+    bool zeroFlag {};
+    bool signFlag {};
+
     for (const DecodeInstruction& instruction : instructions)
     {
-        ExecuteInstruction(registers, instruction);
+        ExecuteInstruction(registers, instruction, zeroFlag, signFlag);
     }
 
     for (size_t i = 0; i < registers.size(); ++i)
