@@ -731,7 +731,14 @@ void ExecuteInstruction(std::array<uint16_t, 8>& registers, const DecodeInstruct
     }
     else if (instruction.mnemonic == "add")
     {
-        throw std::runtime_error("add not supported yet.");
+        const uint16_t destinationValue = ReadOperandValue(registers, instruction.destinationOperand);
+        const uint16_t sourceValue = ReadOperandValue(registers, instruction.sourceOperand);
+
+        const uint16_t result = destinationValue + sourceValue;
+        zeroFlag = result == 0;
+        signFlag = (result >> 15) & 0b1;
+
+        registers[instruction.destinationOperand.registerIndex] = result;
     }
     else if (instruction.mnemonic == "sub")
     {
@@ -746,7 +753,12 @@ void ExecuteInstruction(std::array<uint16_t, 8>& registers, const DecodeInstruct
     }
     else if (instruction.mnemonic == "cmp")
     {
-        throw std::runtime_error("cmp not supported yet.");
+        const uint16_t destinationValue = ReadOperandValue(registers, instruction.destinationOperand);
+        const uint16_t sourceValue = ReadOperandValue(registers, instruction.sourceOperand);
+
+        const uint16_t result = destinationValue - sourceValue;
+        zeroFlag = result == 0;
+        signFlag = (result >> 15) & 0b1;
     }
     else
     {
