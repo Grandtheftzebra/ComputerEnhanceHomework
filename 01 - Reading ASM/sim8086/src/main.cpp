@@ -431,17 +431,30 @@ DecodeInstruction decodeArithmeticImmediateToRegisterMemory(const std::vector<ui
     const bool includeMemorySize = true;
     const std::string destination = decodeRmOperand(bytes, index, mod, rm, w, includeMemorySize, instructionSize);
 
+    // TODO: Currently assumes rm is always a register. Fix later.
+    Operand destinationOperand {};
+    destinationOperand.kind = OperandKind::Register;
+    destinationOperand.registerIndex = rm;
+
+    Operand sourceOperand {};
+    sourceOperand.kind = OperandKind::Immediate;
+
     std::string source;
     if (s == 1 || w == 0)
     {
         ensureBytesAvailable(bytes, index + instructionSize, 1, "8-bit immediate");
-        source = formatSigned8(bytes[index + instructionSize]);
+        uint8_t value = bytes[index + instructionSize];
+
+        sourceOperand.immediateValue = value;
+        source = formatSigned8(value);
         instructionSize += 1;
     }
     else
     {
-        const uint16_t immediate = readU16(bytes, index + instructionSize, "16-bit immediate");
-        source = formatSigned16(immediate);
+        const uint16_t immediateValue = readU16(bytes, index + instructionSize, "16-bit immediate");
+
+        sourceOperand.immediateValue = immediateValue;
+        source = formatSigned16(immediateValue);
         instructionSize += 2;
     }
 
@@ -450,6 +463,8 @@ DecodeInstruction decodeArithmeticImmediateToRegisterMemory(const std::vector<ui
     result.destination = destination;
     result.source = source;
     result.size = instructionSize;
+    result.destinationOperand = destinationOperand;
+    result.sourceOperand = sourceOperand;
 
     return result;
 }
