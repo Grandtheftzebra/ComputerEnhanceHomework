@@ -547,7 +547,7 @@ DecodeInstruction decodeJump(const std::vector<uint8_t>& bytes, const size_t ind
 
     DecodeInstruction result;
     result.mnemonic = getJumpMnemonic(byte1);
-    result.destination = std::to_string(static_cast<int>(displacement));
+    result.destination = std::to_string(displacement);
     result.size = 2;
     result.hasJumpTarget = true;
     result.jumpTarget = static_cast<int>(index) + static_cast<int>(result.size) + static_cast<int>(displacement);
@@ -608,9 +608,7 @@ std::vector<DecodeInstruction> DecodeInstructions(const std::vector<uint8_t>& by
     return instructions;
 }
 
-std::map<size_t, std::string> BuildJumpLabels(
-    const std::vector<DecodeInstruction>& instructions,
-    const size_t fileSize)
+std::map<size_t, std::string> BuildJumpLabels(const std::vector<DecodeInstruction>& instructions, const size_t fileSize)
 {
     std::set<size_t> instructionOffsets;
     for (const DecodeInstruction& instruction : instructions)
