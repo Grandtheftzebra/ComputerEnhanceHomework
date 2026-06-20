@@ -85,7 +85,7 @@ uint16_t readU16(const std::vector<uint8_t>& bytes, const size_t index, const ch
     const uint8_t lowByte = bytes[index];
     const uint8_t highByte = bytes[index + 1];
 
-    return static_cast<uint16_t>(lowByte) | (static_cast<uint16_t>(highByte) << 8);
+    return static_cast<uint16_t>(lowByte) | static_cast<uint16_t>(highByte) << 8;
 }
 
 int8_t readI8(const std::vector<uint8_t>& bytes, const size_t index, const char* context)
@@ -102,12 +102,12 @@ int16_t readI16(const std::vector<uint8_t>& bytes, const size_t index, const cha
 
 std::string formatSigned8(const uint8_t value)
 {
-    return std::to_string(static_cast<int>(static_cast<int8_t>(value)));
+    return std::to_string(static_cast<int8_t>(value));
 }
 
 std::string formatSigned16(const uint16_t value)
 {
-    return std::to_string(static_cast<int>(static_cast<int16_t>(value)));
+    return std::to_string(static_cast<int16_t>(value));
 }
 
 std::string formatDisplacement(const int displacement)
@@ -509,6 +509,43 @@ DecodeInstruction decodeArithmeticImmediateToAccumulator(const std::vector<uint8
     return result;
 }
 
+
+/*
+8086 conditional jump mnemonics
+
+Mnemonic | Meaning                  | Condition
+---------|--------------------------|--------------------------
+jo       | Jump if overflow          | OF = 1
+jno      | Jump if not overflow      | OF = 0
+
+jb       | Jump if below             | CF = 1
+jnb      | Jump if not below         | CF = 0
+
+je       | Jump if equal             | ZF = 1
+jnz      | Jump if not zero          | ZF = 0
+
+jbe      | Jump if below or equal    | CF = 1 OR ZF = 1
+ja       | Jump if above             | CF = 0 AND ZF = 0
+
+js       | Jump if sign              | SF = 1
+jns      | Jump if not sign          | SF = 0
+
+jp       | Jump if parity            | PF = 1
+jnp      | Jump if not parity        | PF = 0
+
+jl       | Jump if less              | SF != OF
+jnl      | Jump if not less          | SF = OF
+
+jle      | Jump if less or equal     | ZF = 1 OR SF != OF
+jg       | Jump if greater           | ZF = 0 AND SF = OF
+
+Notes:
+- below / above are for unsigned comparisons.
+- less / greater are for signed comparisons.
+- je is also commonly called jz.
+- jnz is also commonly called jne.
+- Conditional jumps apply their signed displacement relative to IP after decoding.
+*/
 const char* getJumpMnemonic(const uint8_t byte1)
 {
     static const char* conditionalJumps[16] = {
@@ -608,7 +645,9 @@ std::vector<DecodeInstruction> DecodeInstructions(const std::vector<uint8_t>& by
     return instructions;
 }
 
-std::map<size_t, std::string> BuildJumpLabels(const std::vector<DecodeInstruction>& instructions, const size_t fileSize)
+std::map<size_t, std::string> BuildJumpLabels(
+    const std::vector<DecodeInstruction>& instructions,
+    const size_t fileSize)
 {
     std::set<size_t> instructionOffsets;
     for (const DecodeInstruction& instruction : instructions)
@@ -619,10 +658,7 @@ std::map<size_t, std::string> BuildJumpLabels(const std::vector<DecodeInstructio
     std::set<size_t> targetOffsets;
     for (const DecodeInstruction& instruction : instructions)
     {
-        if (!instruction.hasJumpTarget || instruction.jumpTarget < 0)
-        {
-            continue;
-        }
+        if (!instruction.hasJumpTarget || instruction.jumpTarget < 0) continue;
 
         const auto targetOffset = static_cast<size_t>(instruction.jumpTarget);
         if (instructionOffsets.contains(targetOffset) || targetOffset == fileSize)
@@ -648,10 +684,7 @@ void ApplyJumpLabels(
 {
     for (DecodeInstruction& instruction : instructions)
     {
-        if (!instruction.hasJumpTarget || instruction.jumpTarget < 0)
-        {
-            continue;
-        }
+        if (!instruction.hasJumpTarget || instruction.jumpTarget < 0) continue;
 
         const auto label = labels.find(static_cast<size_t>(instruction.jumpTarget));
         if (label != labels.end())
@@ -689,9 +722,9 @@ size_t GetProgramFileSize(const std::vector<DecodeInstruction>& instructions)
 {
     if (instructions.empty()) return 0;
 
-    const DecodeInstruction& last = instructions.back();
+    const DecodeInstruction& lastInstruction = instructions.back();
 
-    return last.offset + last.size;
+    return lastInstruction.offset + lastInstruction.size;
 }
 
 void DecodeFile(const std::string& path)
