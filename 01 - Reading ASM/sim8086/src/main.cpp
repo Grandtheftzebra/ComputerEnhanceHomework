@@ -768,7 +768,10 @@ uint16_t ReadOperandValue(const std::array<uint16_t, 8>& registers, const Operan
 
 void ExecuteInstruction(std::array<uint16_t, 8>& registers, const DecodeInstruction& instruction, bool& zeroFlag, bool& signFlag)
 {
-    if (instruction.destinationOperand.kind != OperandKind::Register) throw std::runtime_error("Destination Operand must be a Register");
+    if (instruction.destinationOperand.kind != OperandKind::Register)
+    {
+        throw std::runtime_error("Destination Operand must be a Register");
+    }
 
     if (instruction.mnemonic == "mov")
     {
