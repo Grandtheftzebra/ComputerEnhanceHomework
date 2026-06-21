@@ -766,20 +766,30 @@ uint16_t ReadOperandValue(const std::array<uint16_t, 8>& registers, const Operan
     }
 }
 
-void ExecuteInstruction(std::array<uint16_t, 8>& registers, const DecodeInstruction& instruction, bool& zeroFlag, bool& signFlag)
+void ExecuteInstruction(
+    std::array<uint16_t, 8>& registers,
+    const DecodeInstruction& instruction,
+    size_t& instructionPointer,
+    bool& zeroFlag,
+    bool& signFlag)
 {
-    if (instruction.destinationOperand.kind != OperandKind::Register)
-    {
-        throw std::runtime_error("Destination Operand must be a Register");
-    }
-
     if (instruction.mnemonic == "mov")
     {
+        if (instruction.destinationOperand.kind != OperandKind::Register)
+        {
+            throw std::runtime_error("Destination Operand must be a Register");
+        }
+
         const uint16_t source = ReadOperandValue(registers, instruction.sourceOperand);
         registers[instruction.destinationOperand.registerIndex] = source;
     }
     else if (instruction.mnemonic == "add")
     {
+        if (instruction.destinationOperand.kind != OperandKind::Register)
+        {
+            throw std::runtime_error("Destination Operand must be a Register");
+        }
+
         const uint16_t destinationValue = ReadOperandValue(registers, instruction.destinationOperand);
         const uint16_t sourceValue = ReadOperandValue(registers, instruction.sourceOperand);
 
@@ -791,6 +801,11 @@ void ExecuteInstruction(std::array<uint16_t, 8>& registers, const DecodeInstruct
     }
     else if (instruction.mnemonic == "sub")
     {
+        if (instruction.destinationOperand.kind != OperandKind::Register)
+        {
+            throw std::runtime_error("Destination Operand must be a Register");
+        }
+
         const uint16_t destinationValue = ReadOperandValue(registers, instruction.destinationOperand);
         const uint16_t sourceValue = ReadOperandValue(registers, instruction.sourceOperand);
 
@@ -802,12 +817,24 @@ void ExecuteInstruction(std::array<uint16_t, 8>& registers, const DecodeInstruct
     }
     else if (instruction.mnemonic == "cmp")
     {
+        if (instruction.destinationOperand.kind != OperandKind::Register)
+        {
+            throw std::runtime_error("Destination Operand must be a Register");
+        }
+
         const uint16_t destinationValue = ReadOperandValue(registers, instruction.destinationOperand);
         const uint16_t sourceValue = ReadOperandValue(registers, instruction.sourceOperand);
 
         const uint16_t result = destinationValue - sourceValue;
         zeroFlag = result == 0;
         signFlag = (result >> 15) & 0b1;
+    }
+    else if (instruction.mnemonic == "jnz")
+    {
+        if (!zeroFlag)
+        {
+            instructionPointer = instruction.jumpTarget;
+        }
     }
     else
     {
@@ -846,15 +873,61 @@ std::string FormatFlags(const bool zeroFlag, const bool signFlag)
 
 void SimulateFile(const std::string& path)
 {
-    const std::vector<DecodeInstruction> instructions = ReadAndDecode(path);
+    //const std::vector<DecodeInstruction> instructions = ReadAndDecode(path);
+    const std::vector<uint8_t> bytes = ReadBinaryFile(path);
     std::array<uint16_t, 8> registers {};
+    size_t instructionPointer { 0 };
 
     bool zeroFlag {};
     bool signFlag {};
 
+    while (instructionPointer < bytes.size())
+    {
+        const std::array<uint16_t, 8> beforeRegisters = registers;
+        const bool beforeZeroFlag = zeroFlag;
+        const bool beforeSignFlag = signFlag;
+
+        const DecodeInstruction instruction = decodeInstruction(bytes, instructionPointer);
+        instructionPointer += instruction.size;
+
+        ExecuteInstruction(registers, instruction, instructionPointer,zeroFlag, signFlag);
+
+        PrintInstruction(instruction, false);
+
+        bool printedChange = false;
+        for (size_t i = 0; i < registers.size(); ++i)
+        {
+            if (beforeRegisters[i] == registers[i]) continue;
+
+            if (!printedChange)
+            {
+                std::cout << " ;";
+                printedChange = true;
+            }
+
+            std::cout << ' ' << getRegisterName(static_cast<uint8_t>(i), 1)
+                      << ":0x" << std::hex << beforeRegisters[i]
+                      << "->0x" << registers[i] << std::dec;
+        }
+
+        const std::string beforeFlags = FormatFlags(beforeZeroFlag, beforeSignFlag);
+        const std::string afterFlags = FormatFlags(zeroFlag, signFlag);
+
+        if (beforeFlags != afterFlags)
+        {
+            if (!printedChange) std::cout << " ;";
+            std::cout << " flags:" << beforeFlags << "->" << afterFlags;
+        }
+
+        std::cout << '\n';
+    }
+
+
+    /*
     for (const DecodeInstruction& instruction : instructions)
     {
         const std::array<uint16_t, 8> beforeRegisters = registers;
+
         const bool beforeZeroFlag = zeroFlag;
         const bool beforeSignFlag = signFlag;
 
@@ -889,6 +962,7 @@ void SimulateFile(const std::string& path)
 
         std::cout << '\n';
     }
+    */
 }
 
 // argc = argument count, argv = argument vector - C Style string array.
