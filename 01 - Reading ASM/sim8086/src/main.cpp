@@ -428,7 +428,7 @@ DecodeInstruction decodeArithmeticImmediateToRegisterMemory(const std::vector<ui
     }
 
     size_t instructionSize = 2;
-    const bool includeMemorySize = true;
+    constexpr bool includeMemorySize = true;
     const std::string destination = decodeRmOperand(bytes, index, mod, rm, w, includeMemorySize, instructionSize);
 
     // TODO: Currently assumes rm is always a register. Fix later.

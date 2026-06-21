@@ -1,8 +1,8 @@
-# From Disassembler to Simulator — Simulating Non-Memory MOVs
+# From Disassembler to Simulator — Registers, Arithmetic, and Tracing
 
-This document explains *what* we built in Part 1 ("Simulating Non-memory MOVs") and
-*why* each piece exists. If the concept didn't fully click while coding, read this
-top to bottom — it's written to build the idea up from scratch.
+This document begins with Part 1 ("Simulating Non-memory MOVs") and follows the
+simulator through arithmetic, flags, and per-instruction tracing. It explains both
+*what* the current code does and *why* each piece exists.
 
 ---
 
@@ -34,9 +34,9 @@ So the leap from Part 0 to Part 1 is exactly this:
 
 > **A decoder describes. A simulator remembers and changes.**
 
-The test is no longer "does the disassembly come out right?" (that's decoding). It's
-"after running all the instructions, what's in each register?" Only execution can
-answer that — and that's why listing_0044 exists: it chains values
+The test is no longer only "does the disassembly come out right?" (that's decoding).
+It is also "what state changes after each instruction, and where does the machine end
+up?" Only execution can answer that — and that's why listing_0044 exists: it chains values
 (`mov sp, ax` then later `mov dx, sp`), which only produces the right answer if you
 carried each value forward through real state.
 
@@ -48,14 +48,14 @@ Everything we built fits this shape:
 
 ```
         BYTES                 STRUCTURED INSTRUCTION              CPU STATE
-   (raw machine code)   →     (DecodeInstruction + Operands)  →  (registers[8])
-        DECODE                                                     EXECUTE
+   (raw machine code)   →     (DecodeInstruction + Operands)  →  (registers[8] + Z/S)
+        DECODE                                                     EXECUTE + TRACE
 ```
 
 - **Decode half** (already existed, we extended it): bytes → a `DecodeInstruction`
   describing the operation and its operands.
-- **Execute half** (new): take that structured instruction and *apply* it to the
-  register file, mutating state.
+- **Execute half** (new): take that structured instruction, apply it to the register
+  and flag state, then report the resulting changes.
 
 The bridge between the two halves is the **`Operand`** type — and getting that bridge
 right was the heart of this part.
@@ -157,7 +157,7 @@ else        { result.destinationOperand = rmAsOperand;  result.sourceOperand = r
 
 ---
 
-## 5. The CPU state: why an array, not a hash map
+## 5. The CPU state: registers and flags
 
 The registers are stored as:
 
@@ -177,9 +177,19 @@ code, so `registers[i]` and `reg16[i]` line up — index 4 is `sp` in both. The 
 *mirrors the hardware*: a CPU register file really is a small fixed bank addressed by
 number.
 
-> **Minimum state for this part:** just the 8 registers. We deliberately deferred
-> `al`/`ah` half-registers, the FLAGS register, and the instruction pointer — none of
-> the MOVs in listings 0043/0044 need them. Don't build what the listings don't exercise.
+The simulator also tracks the two flags needed by the currently supported arithmetic:
+
+```cpp
+bool zeroFlag{};
+bool signFlag{};
+```
+
+- **Zero (`Z`)** is set when an arithmetic result is zero.
+- **Sign (`S`)** is copied from bit 15 of the 16-bit result.
+
+These are separate booleans rather than a complete 8086 FLAGS register because no other
+flags are simulated yet. The instruction pointer and `al`/`ah` half-register behavior are
+also still outside the current scope.
 
 ---
 
@@ -206,51 +216,115 @@ Note this is a **read** helper — `registers` is `const`. You can *read* an imm
 but you can't *write* to one (`mov 5, ax` is nonsense), which is why writing needs a
 separate path with a guard.
 
-### Piece 2 — execute one MOV
+### Piece 2 — execute one instruction
 
-A MOV is "compute the source value, store it into the destination register":
+`ExecuteInstruction` currently supports `mov`, `add`, `sub`, and `cmp`:
 
 ```cpp
-void ExecuteInstruction(std::array<uint16_t, 8>& registers, const DecodeInstruction& instruction)
+void ExecuteInstruction(std::array<uint16_t, 8>& registers,
+                        const DecodeInstruction& instruction,
+                        bool& zeroFlag,
+                        bool& signFlag)
 {
     if (instruction.destinationOperand.kind != OperandKind::Register)
         throw std::runtime_error("destination must be a register");
-    if (instruction.mnemonic != "mov")
-        throw std::runtime_error("only mov supported currently");
 
-    const uint16_t source = ReadOperandValue(registers, instruction.sourceOperand);   // read first
-    registers[instruction.destinationOperand.registerIndex] = source;                 // then write
+    if (instruction.mnemonic == "mov")
+    {
+        registers[instruction.destinationOperand.registerIndex] =
+            ReadOperandValue(registers, instruction.sourceOperand);
+    }
+    else if (instruction.mnemonic == "add")
+    {
+        const uint16_t result =
+            ReadOperandValue(registers, instruction.destinationOperand) +
+            ReadOperandValue(registers, instruction.sourceOperand);
+
+        zeroFlag = result == 0;
+        signFlag = (result >> 15) & 0b1;
+        registers[instruction.destinationOperand.registerIndex] = result;
+    }
+    // sub computes and stores destination - source.
+    // cmp performs the same subtraction only to update the flags.
+    else if (instruction.mnemonic == "sub" /* ... */) { /* ... */ }
+    else if (instruction.mnemonic == "cmp" /* ... */) { /* ... */ }
+    else
+    {
+        throw std::runtime_error("Unsupported mnemonic: " + instruction.mnemonic);
+    }
 }
 ```
 
-Two deliberate guards:
-- The destination **must** be a register (you can only store *into* a register).
-- The mnemonic must be `mov` (arithmetic isn't executed yet — fail loudly instead of
-  doing the wrong thing).
+The destination guard rejects memory writes because memory simulation is not implemented.
+Unknown mnemonics also fail loudly instead of silently producing incorrect state.
 
-And the order matters in principle: **read the source before writing the destination.**
+The instruction behavior is:
 
-### Piece 3 — the loop + the register dump
+- `mov` copies the source into the destination and leaves the flags unchanged.
+- `add` and `sub` write their 16-bit result and update `Z` and `S`.
+- `cmp` calculates `destination - source` and updates `Z` and `S`, but does not write
+  the result back to the destination.
+
+### Piece 3 — the per-instruction trace loop
 
 ```cpp
 void SimulateFile(const std::string& path)
 {
     const std::vector<DecodeInstruction> instructions = ReadAndDecode(path);
-    std::array<uint16_t, 8> registers{};   // all start at 0
+    std::array<uint16_t, 8> registers{};
+
+    bool zeroFlag{};
+    bool signFlag{};
 
     for (const DecodeInstruction& instruction : instructions)
-        ExecuteInstruction(registers, instruction);
+    {
+        const std::array<uint16_t, 8> beforeRegisters = registers;
+        const bool beforeZeroFlag = zeroFlag;
+        const bool beforeSignFlag = signFlag;
 
-    // dump every register: name + hex + decimal
-    for (size_t i = 0; i < registers.size(); ++i)
-        std::cout << "      " << getRegisterName(static_cast<uint8_t>(i), 1) << ": 0x"
-                  << std::hex << std::setfill('0') << std::setw(4) << registers[i]
-                  << " (" << std::dec << registers[i] << ")\n";
+        ExecuteInstruction(registers, instruction, zeroFlag, signFlag);
+
+        PrintInstruction(instruction, false);
+
+        bool printedChange = false;
+        for (size_t i = 0; i < registers.size(); ++i)
+        {
+            if (beforeRegisters[i] == registers[i]) continue;
+
+            if (!printedChange)
+            {
+                std::cout << " ;";
+                printedChange = true;
+            }
+
+            std::cout << ' ' << getRegisterName(static_cast<uint8_t>(i), 1)
+                      << ":0x" << std::hex << beforeRegisters[i]
+                      << "->0x" << registers[i] << std::dec;
+        }
+
+        const std::string beforeFlags = FormatFlags(beforeZeroFlag, beforeSignFlag);
+        const std::string afterFlags = FormatFlags(zeroFlag, signFlag);
+
+        if (beforeFlags != afterFlags)
+        {
+            if (!printedChange) std::cout << " ;";
+            std::cout << " flags:" << beforeFlags << "->" << afterFlags;
+        }
+
+        std::cout << '\n';
+    }
 }
 ```
 
-This is the whole simulator: start state at zero, fold each instruction over the
-state, print the result.
+The outer loop executes instructions in file order. Before each execution it snapshots
+the current registers and flags. After execution, it compares the snapshots with the
+new state and prints only what changed on the same line as the instruction.
+
+`printedChange` ensures the ` ;` separator is printed once, before the first change.
+The inner register loop scans all eight registers, skips unchanged values, prints changed
+values in hexadecimal, and restores `std::dec` afterward so the stream's number format
+does not leak into later output. `FormatFlags` converts the two booleans into `Z`, `S`,
+`ZS`, or an empty string so flag transitions can use the same `before->after` format.
 
 ---
 
@@ -279,23 +353,17 @@ Two traps we hit and fixed:
 
 ---
 
-## 8. Encoding order vs. display order
+## 8. Register order in the trace
 
-The register dump came out as `ax, cx, dx, bx, ...` instead of `ax, bx, cx, dx, ...`.
-That's **not a bug** — every *value* was correct. It's two different orderings:
+The inner trace loop scans the register array from index 0 through 7. That is **encoding
+order**, because the array is indexed directly by the 8086's 3-bit register codes:
 
-- **Encoding order** (`ax, cx, dx, bx, sp, bp, si, di`) is the actual 3-bit register
-  code. Storage and execution **must** use this, because that's what the bytes mean.
-- **Display order** (`ax, bx, cx, dx, ...`) is just a friendlier order for humans.
+- `ax, cx, dx, bx, sp, bp, si, di`
 
-The fix is to reorder the **iteration when printing**, never the array itself:
-
-```cpp
-static const uint8_t displayOrder[8] = {0, 3, 1, 2, 4, 5, 6, 7}; // ax,bx,cx,dx,sp,bp,si,di
-```
-
-> Keep these two orderings separate in your head: encoding order is forced by the
-> hardware; presentation order is a cosmetic choice.
+Usually only one destination register changes per instruction, so this ordering is
+rarely visible. If an instruction changes multiple registers in the future, their trace
+entries will appear in encoding order. The storage array must remain in encoding order;
+any friendlier presentation order should be applied only while printing.
 
 ---
 
@@ -306,14 +374,17 @@ static const uint8_t displayOrder[8] = {0, 3, 1, 2, 4, 5, 6, 7}; // ax,bx,cx,dx,
    value) at the moment you first have it, instead of re-parsing strings later.
 3. **State lives in an array indexed by register code** — the same code that indexes
    the name table. The data structure mirrors the hardware.
-4. **Guard loudly** on anything not yet supported (memory operands, non-mov mnemonics)
+4. **Trace state transitions.** Snapshot before execution, execute once, then compare
+   before and after state to report only changes.
+5. **Arithmetic owns flag updates.** `add`, `sub`, and `cmp` update `Z` and `S`; `mov`
+   leaves them unchanged, and `cmp` does not store its subtraction result.
+6. **Guard loudly** on anything not yet supported (memory operands, unknown mnemonics)
    so future gaps fail visibly instead of corrupting state.
-5. **Build only what the listings exercise.** We deferred halves/flags/IP and left a
-   `Memory` tripwire — scaffolding for later parts without overbuilding now.
+7. **Build only what the listings exercise.** We still defer half-register behavior,
+   memory execution, the instruction pointer, and the rest of FLAGS.
 
 This same architecture extends cleanly:
-- **Arithmetic (`add`/`sub`/`cmp`)** → new `ExecuteInstruction` cases + a FLAGS register.
-- **Memory MOVs** → flesh out the `OperandKind::Memory` path you already stubbed.
-- **Jumps** → an instruction pointer that execution updates instead of a plain loop.
-```
-
+- **More arithmetic** → additional execution cases and the remaining affected flags.
+- **Memory operands** → implement reads/writes for `OperandKind::Memory`.
+- **Jumps** → add an instruction pointer and let execution choose the next instruction
+  instead of always relying on the range-based loop.
