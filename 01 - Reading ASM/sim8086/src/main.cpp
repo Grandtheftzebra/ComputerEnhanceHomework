@@ -869,7 +869,11 @@ void DecodeFile(const std::string& path)
     }
 }
 
-uint16_t ReadOperandValue(const std::array<uint16_t, 8>& registers, const Operand& operand)
+uint16_t ReadOperandValue(
+    std::vector<uint8_t>& memory,
+    const std::array<uint16_t, 8>& registers,
+    const Operand& operand,
+    const bool is16BitRegister)
 {
     switch (operand.kind)
     {
@@ -895,7 +899,7 @@ void ExecuteInstruction(
             throw std::runtime_error("Destination Operand must be a Register");
         }
 
-        const uint16_t source = ReadOperandValue(registers, instruction.sourceOperand);
+        const uint16_t source = ReadOperandValue(memory, registers, instruction.sourceOperand, instruction.uses16Bit);
         registers[instruction.destinationOperand.registerIndex] = source;
     }
     else if (instruction.mnemonic == "add")
@@ -905,8 +909,8 @@ void ExecuteInstruction(
             throw std::runtime_error("Destination Operand must be a Register");
         }
 
-        const uint16_t destinationValue = ReadOperandValue(registers, instruction.destinationOperand);
-        const uint16_t sourceValue = ReadOperandValue(registers, instruction.sourceOperand);
+        const uint16_t destinationValue = ReadOperandValue(memory, registers, instruction.destinationOperand, instruction.uses16Bit);
+        const uint16_t sourceValue = ReadOperandValue(memory, registers, instruction.sourceOperand, instruction.uses16Bit);
 
         const uint16_t result = destinationValue + sourceValue;
         zeroFlag = result == 0;
@@ -921,8 +925,8 @@ void ExecuteInstruction(
             throw std::runtime_error("Destination Operand must be a Register");
         }
 
-        const uint16_t destinationValue = ReadOperandValue(registers, instruction.destinationOperand);
-        const uint16_t sourceValue = ReadOperandValue(registers, instruction.sourceOperand);
+        const uint16_t destinationValue = ReadOperandValue(memory, registers, instruction.destinationOperand, instruction.uses16Bit);
+        const uint16_t sourceValue = ReadOperandValue(memory, registers, instruction.sourceOperand, instruction.uses16Bit);
 
         const uint16_t result = destinationValue - sourceValue;
         zeroFlag = result == 0;
@@ -937,8 +941,8 @@ void ExecuteInstruction(
             throw std::runtime_error("Destination Operand must be a Register");
         }
 
-        const uint16_t destinationValue = ReadOperandValue(registers, instruction.destinationOperand);
-        const uint16_t sourceValue = ReadOperandValue(registers, instruction.sourceOperand);
+        const uint16_t destinationValue = ReadOperandValue(memory, registers, instruction.destinationOperand, instruction.uses16Bit);
+        const uint16_t sourceValue = ReadOperandValue(memory, registers, instruction.sourceOperand, instruction.uses16Bit);
 
         const uint16_t result = destinationValue - sourceValue;
         zeroFlag = result == 0;
