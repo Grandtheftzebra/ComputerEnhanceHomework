@@ -912,6 +912,29 @@ uint16_t GetValueAt(const int32_t memoryAddress, const std::vector<uint8_t>& mem
     return byte1 | (byte2 << 8);
 }
 
+void SetValueAt(const int32_t memoryAddress, std::vector<uint8_t>& memory, const uint16_t source, const bool is16Bit)
+{
+    if (memoryAddress < 0) throw std::runtime_error("memoryAddress can't be negative!");
+
+    const size_t address = static_cast<size_t>(memoryAddress);
+    const size_t bytesNeeded = is16Bit ? 2 : 1;
+    if (address + bytesNeeded > memory.size())
+    {
+        throw std::runtime_error("Memory write is out of bounds.");
+    }
+
+    // NOTE: 0xFF = 0b11111111
+    const uint8_t lowByte = source & 0xFF;
+    memory[address] = lowByte;
+
+    if (is16Bit)
+    {
+        const uint8_t highByte = source >> 8;
+
+        memory[address + 1] = highByte;
+    }
+}
+
 uint16_t ReadOperandValue(
     const std::vector<uint8_t>& memory,
     const std::array<uint16_t, 8>& registers,
@@ -937,13 +960,21 @@ void ExecuteInstruction(
 {
     if (instruction.mnemonic == "mov")
     {
-        if (instruction.destinationOperand.kind != OperandKind::Register)
-        {
-            throw std::runtime_error("Destination Operand must be a Register");
-        }
-
         const uint16_t source = ReadOperandValue(memory, registers, instruction.sourceOperand, instruction.uses16Bit);
-        registers[instruction.destinationOperand.registerIndex] = source;
+
+        if (instruction.destinationOperand.kind == OperandKind::Register)
+        {
+            registers[instruction.destinationOperand.registerIndex] = source;
+        }
+        else if (instruction.destinationOperand.kind == OperandKind::Memory)
+        {
+            const int32_t destination = CalculateAddress(registers, instruction.destinationOperand);
+            SetValueAt(destination, memory, source, instruction.uses16Bit);
+        }
+        else
+        {
+            throw std::runtime_error("Immediate not supported");
+        }
     }
     else if (instruction.mnemonic == "add")
     {
