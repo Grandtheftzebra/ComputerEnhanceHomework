@@ -24,8 +24,13 @@ enum class MnemonicType
 struct Operand
 {
     OperandKind kind = OperandKind::Register;
+
     uint8_t registerIndex {}; // used when kind == Register
     uint16_t immediateValue {}; // used when kind == Immediate
+
+    uint8_t modValue {};
+    uint8_t rmValue {};
+    int32_t addressValue {};
 };
 
 struct DecodedInstruction
@@ -337,10 +342,11 @@ DecodedInstruction DecodeMovImmediateToRegisterMemory(const std::vector<uint8_t>
 
     const uint8_t rm = byte2 & 0b111;
 
+    DecodedInstruction result;
+
     size_t instructionSize = 2;
     const std::string rmOperand = decodeRmOperand(bytes, index, mod, rm, w, true, instructionSize);
 
-    DecodedInstruction result;
     result.mnemonic = "mov";
     result.destination = rmOperand;
     result.destinationOperand.kind = OperandKind::Memory;
