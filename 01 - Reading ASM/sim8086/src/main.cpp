@@ -231,7 +231,7 @@ DecodedInstruction DecodeMovRegisterMemoryToFromRegister(const std::vector<uint8
     const uint8_t rm = byte2 & 0b111;
 
     const std::string regOperand = getRegisterName(reg, w);
-    // NOTE: instructionSize starts at 2 because byte1 & byte2 were already consumed.
+    // NOTE: instruction size starts at 2 because byte1 & byte2 were already consumed.
     // decodeRmOperand may add displacement bytes.
 
     DecodedInstruction instruction;
@@ -299,34 +299,34 @@ DecodedInstruction DecodeMovImmediateToRegister(const std::vector<uint8_t>& byte
     const uint8_t w = (byte1 >> 3) & 0b1;
     const uint8_t reg = byte1 & 0b111;
 
-    DecodedInstruction result;
-    result.mnemonic = "mov";
+    DecodedInstruction instruction;
+    instruction.mnemonic = "mov";
 
-    result.destinationOperand.kind = OperandKind::Register;
-    result.destinationOperand.registerIndex = reg;
-    result.destination = getRegisterName(reg, w);
+    instruction.destinationOperand.kind = OperandKind::Register;
+    instruction.destinationOperand.registerIndex = reg;
+    instruction.destination = getRegisterName(reg, w);
 
-    result.sourceOperand.kind = OperandKind::Immediate;
+    instruction.sourceOperand.kind = OperandKind::Immediate;
 
     if (w == 0)
     {
         ensureBytesAvailable(bytes, index + 1, 1, "8-bit immediate");
         const uint8_t immediate = bytes[index + 1];
 
-        result.sourceOperand.immediateValue = immediate;
-        result.source = formatSigned8(immediate);
-        result.size = 2;
+        instruction.sourceOperand.immediateValue = immediate;
+        instruction.source = formatSigned8(immediate);
+        instruction.size = 2;
     }
     else
     {
         const uint16_t immediate = readU16(bytes, index + 1, "16-bit immediate");
 
-        result.sourceOperand.immediateValue = immediate;
-        result.source = formatSigned16(immediate);
-        result.size = 3;
+        instruction.sourceOperand.immediateValue = immediate;
+        instruction.source = formatSigned16(immediate);
+        instruction.size = 3;
     }
 
-    return result;
+    return instruction;
 }
 
 bool IsMovImmediateToRegisterMemory(const uint8_t byte1)
@@ -357,35 +357,42 @@ DecodedInstruction DecodeMovImmediateToRegisterMemory(const std::vector<uint8_t>
 
     const uint8_t rm = byte2 & 0b111;
 
-    DecodedInstruction result;
+    DecodedInstruction instruction;
+    instruction.size = 2;
+    instruction.mnemonic = "mov";
+    instruction.destinationOperand.kind = OperandKind::Memory;
+    instruction.destinationOperand.modValue = mod;
+    instruction.destinationOperand.rmValue = rm;
+    instruction.destination = decodeRmOperand(
+        bytes,
+        index,
+        mod,
+        rm,
+        w,
+        true,
+        instruction.size,
+        instruction.destinationOperand);
 
-    size_t instructionSize = 2;
-    const std::string rmOperand = decodeRmOperand(bytes, index, mod, rm, w, true, instructionSize);
-
-    result.mnemonic = "mov";
-    result.destination = rmOperand;
-    result.destinationOperand.kind = OperandKind::Memory;
-
-    result.sourceOperand.kind = OperandKind::Immediate;
+    instruction.sourceOperand.kind = OperandKind::Immediate;
     if (w == 0)
     {
-        ensureBytesAvailable(bytes, index + instructionSize, 1, "8-bit immediate");
-        const uint8_t immediate = bytes[index + instructionSize];
+        ensureBytesAvailable(bytes, index + instruction.size, 1, "8-bit immediate");
+        const uint8_t immediate = bytes[index + instruction.size];
 
-        result.sourceOperand.immediateValue = immediate;
-        result.source = formatSigned8(immediate);
-        result.size = instructionSize + 1;
+        instruction.sourceOperand.immediateValue = immediate;
+        instruction.source = formatSigned8(immediate);
+        instruction.size += 1;
     }
     else
     {
-        const uint16_t immediate = readU16(bytes, index + instructionSize, "16-bit immediate");
+        const uint16_t immediate = readU16(bytes, index + instruction.size, "16-bit immediate");
 
-        result.sourceOperand.immediateValue = immediate;
-        result.source = formatSigned16(immediate);
-        result.size = instructionSize + 2;
+        instruction.sourceOperand.immediateValue = immediate;
+        instruction.source = formatSigned16(immediate);
+        instruction.size += 2;
     }
 
-    return result;
+    return instruction;
 }
 
 const char* getArithmeticMnemonic(const uint8_t operation)
@@ -428,12 +435,10 @@ DecodedInstruction DecodeArithmeticRegisterMemoryToFromRegister(const std::vecto
     const uint8_t rm = byte2 & 0b111;
 
     const std::string regOperand = getRegisterName(reg, w);
-    size_t instructionSize = 2;
-    const std::string rmOperand = decodeRmOperand(bytes, index, mod, rm, w, true, instructionSize);
 
-    DecodedInstruction result;
-    result.mnemonic = mnemonic;
-    result.size = instructionSize;
+    DecodedInstruction instruction;
+    instruction.size = 2;
+    instruction.mnemonic = mnemonic;
 
     // reg field is unconditionally a register
     Operand regAsOperand {};
@@ -442,6 +447,18 @@ DecodedInstruction DecodeArithmeticRegisterMemoryToFromRegister(const std::vecto
 
     // rm field is only a register when mod == 0b11; otherwise it's memory
     Operand rmAsOperand {};
+    rmAsOperand.modValue = mod;
+    rmAsOperand.rmValue = rm;
+    const std::string rmOperand = decodeRmOperand(
+        bytes,
+        index,
+        mod,
+        rm,
+        w,
+        true,
+        instruction.size,
+        rmAsOperand);
+
     if (mod == 0b11)
     {
         rmAsOperand.kind = OperandKind::Register;
@@ -454,22 +471,22 @@ DecodedInstruction DecodeArithmeticRegisterMemoryToFromRegister(const std::vecto
 
     if (d == 1)
     {
-        result.destination = regOperand;
-        result.source = rmOperand;
+        instruction.destination = regOperand;
+        instruction.source = rmOperand;
 
-        result.destinationOperand = regAsOperand;
-        result.sourceOperand = rmAsOperand;
+        instruction.destinationOperand = regAsOperand;
+        instruction.sourceOperand = rmAsOperand;
     }
     else
     {
-        result.destination = rmOperand;
-        result.source = regOperand;
+        instruction.destination = rmOperand;
+        instruction.source = regOperand;
 
-        result.destinationOperand = rmAsOperand;
-        result.sourceOperand = regAsOperand;
+        instruction.destinationOperand = rmAsOperand;
+        instruction.sourceOperand = regAsOperand;
     }
 
-    return result;
+    return instruction;
 }
 
 bool IsArithmeticImmediateToRegisterMemory(const uint8_t byte1)
@@ -497,13 +514,32 @@ DecodedInstruction DecodeArithmeticImmediateToRegisterMemory(const std::vector<u
         throw std::runtime_error("Unsupported arithmetic immediate instruction.");
     }
 
-    size_t instructionSize = 2;
-    const std::string destination = decodeRmOperand(bytes, index, mod, rm, w, true, instructionSize);
+    DecodedInstruction instruction;
+    instruction.size = 2;
+    instruction.mnemonic = mnemonic;
 
-    // TODO: Currently assumes rm is always a register. Fix later.
     Operand destinationOperand {};
-    destinationOperand.kind = OperandKind::Register;
-    destinationOperand.registerIndex = rm;
+    destinationOperand.modValue = mod;
+    destinationOperand.rmValue = rm;
+    const std::string destination = decodeRmOperand(
+        bytes,
+        index,
+        mod,
+        rm,
+        w,
+        true,
+        instruction.size,
+        destinationOperand);
+
+    if (mod == 0b11)
+    {
+        destinationOperand.kind = OperandKind::Register;
+        destinationOperand.registerIndex = rm;
+    }
+    else
+    {
+        destinationOperand.kind = OperandKind::Memory;
+    }
 
     Operand sourceOperand {};
     sourceOperand.kind = OperandKind::Immediate;
@@ -511,31 +547,28 @@ DecodedInstruction DecodeArithmeticImmediateToRegisterMemory(const std::vector<u
     std::string source;
     if (s == 1 || w == 0)
     {
-        ensureBytesAvailable(bytes, index + instructionSize, 1, "8-bit immediate");
-        uint8_t value = bytes[index + instructionSize];
+        ensureBytesAvailable(bytes, index + instruction.size, 1, "8-bit immediate");
+        uint8_t value = bytes[index + instruction.size];
 
         sourceOperand.immediateValue = value;
         source = formatSigned8(value);
-        instructionSize += 1;
+        instruction.size += 1;
     }
     else
     {
-        const uint16_t immediateValue = readU16(bytes, index + instructionSize, "16-bit immediate");
+        const uint16_t immediateValue = readU16(bytes, index + instruction.size, "16-bit immediate");
 
         sourceOperand.immediateValue = immediateValue;
         source = formatSigned16(immediateValue);
-        instructionSize += 2;
+        instruction.size += 2;
     }
 
-    DecodedInstruction result;
-    result.mnemonic = mnemonic;
-    result.destination = destination;
-    result.source = source;
-    result.size = instructionSize;
-    result.destinationOperand = destinationOperand;
-    result.sourceOperand = sourceOperand;
+    instruction.destination = destination;
+    instruction.source = source;
+    instruction.destinationOperand = destinationOperand;
+    instruction.sourceOperand = sourceOperand;
 
-    return result;
+    return instruction;
 }
 
 bool IsArithmeticImmediateToAccumulator(const uint8_t byte1)
@@ -558,24 +591,24 @@ DecodedInstruction DecodeArithmeticImmediateToAccumulator(const std::vector<uint
 
     const uint8_t w = byte1 & 0b1;
 
-    DecodedInstruction result;
-    result.mnemonic = mnemonic;
-    result.destination = (w == 0) ? "al" : "ax";
+    DecodedInstruction instruction;
+    instruction.mnemonic = mnemonic;
+    instruction.destination = (w == 0) ? "al" : "ax";
 
     if (w == 0)
     {
         ensureBytesAvailable(bytes, index + 1, 1, "8-bit accumulator immediate");
-        result.source = formatSigned8(bytes[index + 1]);
-        result.size = 2;
+        instruction.source = formatSigned8(bytes[index + 1]);
+        instruction.size = 2;
     }
     else
     {
         const uint16_t immediate = readU16(bytes, index + 1, "16-bit accumulator immediate");
-        result.source = formatSigned16(immediate);
-        result.size = 3;
+        instruction.source = formatSigned16(immediate);
+        instruction.size = 3;
     }
 
-    return result;
+    return instruction;
 }
 
 
@@ -651,14 +684,14 @@ DecodedInstruction DecodeJump(const std::vector<uint8_t>& bytes, const size_t in
     const uint8_t byte1 = bytes[index];
     const int8_t displacement = readI8(bytes, index + 1, "jump displacement");
 
-    DecodedInstruction result;
-    result.mnemonic = getJumpMnemonic(byte1);
-    result.destination = std::to_string(displacement);
-    result.size = 2;
-    result.hasJumpTarget = true;
-    result.jumpTarget = static_cast<int>(index) + static_cast<int>(result.size) + static_cast<int>(displacement);
+    DecodedInstruction instruction;
+    instruction.mnemonic = getJumpMnemonic(byte1);
+    instruction.destination = std::to_string(displacement);
+    instruction.size = 2;
+    instruction.hasJumpTarget = true;
+    instruction.jumpTarget = static_cast<int>(index) + static_cast<int>(instruction.size) + static_cast<int>(displacement);
 
-    return result;
+    return instruction;
 }
 
 DecodedInstruction DecodeInstruction(const std::vector<uint8_t>& bytes, const size_t index)
