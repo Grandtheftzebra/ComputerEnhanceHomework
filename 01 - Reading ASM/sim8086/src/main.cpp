@@ -24,24 +24,24 @@ enum class MnemonicType
 struct Operand
 {
     OperandKind kind = OperandKind::Register;
-    uint8_t registerIndex = 0; // used when kind == Register
-    uint16_t immediateValue = 0; // used when kind == Immediate
+    uint8_t registerIndex {}; // used when kind == Register
+    uint16_t immediateValue {}; // used when kind == Immediate
 };
 
-struct DecodeInstruction
+struct DecodedInstruction
 {
-    std::string mnemonic;
-    std::string destination;
-    std::string source;
+    std::string mnemonic {};
+    std::string destination {};
+    std::string source {};
 
-    Operand destinationOperand;
-    Operand sourceOperand;
+    Operand destinationOperand {};
+    Operand sourceOperand {};
 
-    size_t size = 0;
-    size_t offset = 0;
+    size_t size {};
+    size_t offset {};
 
     bool hasJumpTarget = false;
-    int jumpTarget = 0;
+    int jumpTarget {};
 };
 
 std::vector<uint8_t> ReadBinaryFile(const std::string& path)
@@ -201,19 +201,19 @@ std::string decodeRmOperand(
     return operand;
 }
 
-bool isMovRegisterMemoryToFromRegister(const uint8_t byte)
+bool IsMovRegisterMemoryToFromRegister(const uint8_t byte)
 {
     return (byte >> 2) == 0b100010;
 }
 
-DecodeInstruction decodeMovRegisterMemoryToFromRegister(const std::vector<uint8_t>& bytes, const size_t index)
+DecodedInstruction DecodeMovRegisterMemoryToFromRegister(const std::vector<uint8_t>& bytes, const size_t index)
 {
     ensureBytesAvailable(bytes, index, 2, "mov register/memory to/from register");
 
     const uint8_t byte1 = bytes[index];
     const uint8_t byte2 = bytes[index + 1];
 
-    if (!isMovRegisterMemoryToFromRegister(byte1))
+    if (!IsMovRegisterMemoryToFromRegister(byte1))
     {
         throw std::runtime_error("Unsupported instruction (not a mov reg/mem-to/from-reg).");
     }
@@ -231,7 +231,7 @@ DecodeInstruction decodeMovRegisterMemoryToFromRegister(const std::vector<uint8_
     size_t instructionSize = 2;
     const std::string rmOperand = decodeRmOperand(bytes, index, mod, rm, w, false, instructionSize);
 
-    DecodeInstruction result;
+    DecodedInstruction result;
     result.mnemonic = "mov";
     result.size = instructionSize;
 
@@ -277,7 +277,7 @@ bool IsMovImmediateToRegister(const uint8_t byte1)
     return (byte1 >> 4) == 0b1011;
 }
 
-DecodeInstruction DecodeMovImmediateToRegister(const std::vector<uint8_t>& bytes, const size_t index)
+DecodedInstruction DecodeMovImmediateToRegister(const std::vector<uint8_t>& bytes, const size_t index)
 {
     const uint8_t byte1 = bytes[index];
     if (!IsMovImmediateToRegister(byte1))
@@ -288,7 +288,7 @@ DecodeInstruction DecodeMovImmediateToRegister(const std::vector<uint8_t>& bytes
     const uint8_t w = (byte1 >> 3) & 0b1;
     const uint8_t reg = byte1 & 0b111;
 
-    DecodeInstruction result;
+    DecodedInstruction result;
     result.mnemonic = "mov";
 
     result.destinationOperand.kind = OperandKind::Register;
@@ -329,14 +329,14 @@ const char* getArithmeticMnemonic(const uint8_t operation)
     }
 }
 
-bool isArithmeticRegisterMemoryToFromRegister(const uint8_t byte1)
+bool IsArithmeticRegisterMemoryToFromRegister(const uint8_t byte1)
 {
     const uint8_t operation = (byte1 >> 3) & 0b111;
 
     return ((byte1 & 0b11000100) == 0b00000000) && (getArithmeticMnemonic(operation) != nullptr);
 }
 
-DecodeInstruction decodeArithmeticRegisterMemoryToFromRegister(const std::vector<uint8_t>& bytes, const size_t index)
+DecodedInstruction DecodeArithmeticRegisterMemoryToFromRegister(const std::vector<uint8_t>& bytes, const size_t index)
 {
     ensureBytesAvailable(bytes, index, 2, "arithmetic register/memory to/from register");
 
@@ -361,7 +361,7 @@ DecodeInstruction decodeArithmeticRegisterMemoryToFromRegister(const std::vector
     size_t instructionSize = 2;
     const std::string rmOperand = decodeRmOperand(bytes, index, mod, rm, w, false, instructionSize);
 
-    DecodeInstruction result;
+    DecodedInstruction result;
     result.mnemonic = mnemonic;
     result.size = instructionSize;
 
@@ -402,12 +402,12 @@ DecodeInstruction decodeArithmeticRegisterMemoryToFromRegister(const std::vector
     return result;
 }
 
-bool isArithmeticImmediateToRegisterMemory(const uint8_t byte1)
+bool IsArithmeticImmediateToRegisterMemory(const uint8_t byte1)
 {
     return (byte1 >> 2) == 0b100000;
 }
 
-DecodeInstruction decodeArithmeticImmediateToRegisterMemory(const std::vector<uint8_t>& bytes, const size_t index)
+DecodedInstruction DecodeArithmeticImmediateToRegisterMemory(const std::vector<uint8_t>& bytes, const size_t index)
 {
     ensureBytesAvailable(bytes, index, 2, "arithmetic immediate to register/memory");
 
@@ -458,7 +458,7 @@ DecodeInstruction decodeArithmeticImmediateToRegisterMemory(const std::vector<ui
         instructionSize += 2;
     }
 
-    DecodeInstruction result;
+    DecodedInstruction result;
     result.mnemonic = mnemonic;
     result.destination = destination;
     result.source = source;
@@ -469,14 +469,14 @@ DecodeInstruction decodeArithmeticImmediateToRegisterMemory(const std::vector<ui
     return result;
 }
 
-bool isArithmeticImmediateToAccumulator(const uint8_t byte1)
+bool IsArithmeticImmediateToAccumulator(const uint8_t byte1)
 {
     const uint8_t operation = (byte1 >> 3) & 0b111;
 
     return ((byte1 & 0b11000110) == 0b00000100) && (getArithmeticMnemonic(operation) != nullptr);
 }
 
-DecodeInstruction decodeArithmeticImmediateToAccumulator(const std::vector<uint8_t>& bytes, const size_t index)
+DecodedInstruction DecodeArithmeticImmediateToAccumulator(const std::vector<uint8_t>& bytes, const size_t index)
 {
     const uint8_t byte1 = bytes[index];
 
@@ -489,7 +489,7 @@ DecodeInstruction decodeArithmeticImmediateToAccumulator(const std::vector<uint8
 
     const uint8_t w = byte1 & 0b1;
 
-    DecodeInstruction result;
+    DecodedInstruction result;
     result.mnemonic = mnemonic;
     result.destination = (w == 0) ? "al" : "ax";
 
@@ -570,19 +570,19 @@ const char* getJumpMnemonic(const uint8_t byte1)
     }
 }
 
-bool isJump(const uint8_t byte1)
+bool IsJump(const uint8_t byte1)
 {
     return getJumpMnemonic(byte1) != nullptr;
 }
 
-DecodeInstruction decodeJump(const std::vector<uint8_t>& bytes, const size_t index)
+DecodedInstruction DecodeJump(const std::vector<uint8_t>& bytes, const size_t index)
 {
     ensureBytesAvailable(bytes, index, 2, "short jump");
 
     const uint8_t byte1 = bytes[index];
     const int8_t displacement = readI8(bytes, index + 1, "jump displacement");
 
-    DecodeInstruction result;
+    DecodedInstruction result;
     result.mnemonic = getJumpMnemonic(byte1);
     result.destination = std::to_string(displacement);
     result.size = 2;
@@ -592,34 +592,34 @@ DecodeInstruction decodeJump(const std::vector<uint8_t>& bytes, const size_t ind
     return result;
 }
 
-DecodeInstruction decodeInstruction(const std::vector<uint8_t>& bytes, const size_t index)
+DecodedInstruction DecodeInstruction(const std::vector<uint8_t>& bytes, const size_t index)
 {
     const uint8_t byte1 = bytes[index];
 
-    DecodeInstruction instruction;
-    if (isMovRegisterMemoryToFromRegister(byte1))
+    DecodedInstruction instruction;
+    if (IsMovRegisterMemoryToFromRegister(byte1))
     {
-        instruction = decodeMovRegisterMemoryToFromRegister(bytes, index);
+        instruction = DecodeMovRegisterMemoryToFromRegister(bytes, index);
     }
     else if (IsMovImmediateToRegister(byte1))
     {
         instruction = DecodeMovImmediateToRegister(bytes, index);
     }
-    else if (isArithmeticRegisterMemoryToFromRegister(byte1))
+    else if (IsArithmeticRegisterMemoryToFromRegister(byte1))
     {
-        instruction = decodeArithmeticRegisterMemoryToFromRegister(bytes, index);
+        instruction = DecodeArithmeticRegisterMemoryToFromRegister(bytes, index);
     }
-    else if (isArithmeticImmediateToRegisterMemory(byte1))
+    else if (IsArithmeticImmediateToRegisterMemory(byte1))
     {
-        instruction = decodeArithmeticImmediateToRegisterMemory(bytes, index);
+        instruction = DecodeArithmeticImmediateToRegisterMemory(bytes, index);
     }
-    else if (isArithmeticImmediateToAccumulator(byte1))
+    else if (IsArithmeticImmediateToAccumulator(byte1))
     {
-        instruction = decodeArithmeticImmediateToAccumulator(bytes, index);
+        instruction = DecodeArithmeticImmediateToAccumulator(bytes, index);
     }
-    else if (isJump(byte1))
+    else if (IsJump(byte1))
     {
-        instruction = decodeJump(bytes, index);
+        instruction = DecodeJump(bytes, index);
     }
     else
     {
@@ -631,13 +631,13 @@ DecodeInstruction decodeInstruction(const std::vector<uint8_t>& bytes, const siz
     return instruction;
 }
 
-std::vector<DecodeInstruction> DecodeInstructions(const std::vector<uint8_t>& bytes)
+std::vector<DecodedInstruction> DecodeInstructions(const std::vector<uint8_t>& bytes)
 {
-    std::vector<DecodeInstruction> instructions;
+    std::vector<DecodedInstruction> instructions;
 
     for (size_t i = 0; i < bytes.size();)
     {
-        DecodeInstruction instruction = decodeInstruction(bytes, i);
+        DecodedInstruction instruction = DecodeInstruction(bytes, i);
         i += instruction.size;
         instructions.push_back(instruction);
     }
@@ -646,17 +646,17 @@ std::vector<DecodeInstruction> DecodeInstructions(const std::vector<uint8_t>& by
 }
 
 std::map<size_t, std::string> BuildJumpLabels(
-    const std::vector<DecodeInstruction>& instructions,
+    const std::vector<DecodedInstruction>& instructions,
     const size_t fileSize)
 {
     std::set<size_t> instructionOffsets;
-    for (const DecodeInstruction& instruction : instructions)
+    for (const DecodedInstruction& instruction : instructions)
     {
         instructionOffsets.insert(instruction.offset);
     }
 
     std::set<size_t> targetOffsets;
-    for (const DecodeInstruction& instruction : instructions)
+    for (const DecodedInstruction& instruction : instructions)
     {
         if (!instruction.hasJumpTarget || instruction.jumpTarget < 0) continue;
 
@@ -679,10 +679,10 @@ std::map<size_t, std::string> BuildJumpLabels(
 }
 
 void ApplyJumpLabels(
-    std::vector<DecodeInstruction>& instructions,
+    std::vector<DecodedInstruction>& instructions,
     const std::map<size_t, std::string>& labels)
 {
-    for (DecodeInstruction& instruction : instructions)
+    for (DecodedInstruction& instruction : instructions)
     {
         if (!instruction.hasJumpTarget || instruction.jumpTarget < 0) continue;
 
@@ -694,7 +694,7 @@ void ApplyJumpLabels(
     }
 }
 
-void PrintInstruction(const DecodeInstruction& instruction)
+void PrintInstruction(const DecodedInstruction& instruction)
 {
     std::cout << instruction.mnemonic;
 
@@ -711,25 +711,25 @@ void PrintInstruction(const DecodeInstruction& instruction)
     std::cout << '\n';
 }
 
-std::vector<DecodeInstruction> ReadAndDecode(const std::string& path)
+std::vector<DecodedInstruction> ReadAndDecode(const std::string& path)
 {
     const std::vector<uint8_t> bytes = ReadBinaryFile(path);
 
     return DecodeInstructions(bytes);
 }
 
-size_t GetProgramFileSize(const std::vector<DecodeInstruction>& instructions)
+size_t GetProgramFileSize(const std::vector<DecodedInstruction>& instructions)
 {
     if (instructions.empty()) return 0;
 
-    const DecodeInstruction& lastInstruction = instructions.back();
+    const DecodedInstruction& lastInstruction = instructions.back();
 
     return lastInstruction.offset + lastInstruction.size;
 }
 
 void DecodeFile(const std::string& path)
 {
-    std::vector<DecodeInstruction> instructions = ReadAndDecode(path);
+    std::vector<DecodedInstruction> instructions = ReadAndDecode(path);
     const size_t fileSize = GetProgramFileSize(instructions);
 
     const std::map<size_t, std::string> labels = BuildJumpLabels(instructions, fileSize);
@@ -739,7 +739,7 @@ void DecodeFile(const std::string& path)
     std::cout << "; " << path << " disassembly\n";
     std::cout << "bits 16\n\n";
 
-    for (const DecodeInstruction& instruction : instructions)
+    for (const DecodedInstruction& instruction : instructions)
     {
         if (const auto label = labels.find(instruction.offset); label != labels.end())
         {
@@ -768,7 +768,7 @@ uint16_t ReadOperandValue(const std::array<uint16_t, 8>& registers, const Operan
 
 void ExecuteInstruction(
     std::array<uint16_t, 8>& registers,
-    const DecodeInstruction& instruction,
+    const DecodedInstruction& instruction,
     size_t& instructionPointer,
     bool& zeroFlag,
     bool& signFlag)
@@ -842,7 +842,7 @@ void ExecuteInstruction(
     }
 }
 
-void PrintInstruction(const DecodeInstruction& instruction, const bool newline = true)
+void PrintInstruction(const DecodedInstruction& instruction, const bool newline = true)
 {
     std::cout << instruction.mnemonic;
 
@@ -887,7 +887,7 @@ void SimulateFile(const std::string& path)
         const bool beforeZeroFlag = zeroFlag;
         const bool beforeSignFlag = signFlag;
 
-        const DecodeInstruction instruction = decodeInstruction(bytes, instructionPointer);
+        const DecodedInstruction instruction = DecodeInstruction(bytes, instructionPointer);
         instructionPointer += instruction.size;
 
         ExecuteInstruction(registers, instruction, instructionPointer,zeroFlag, signFlag);
@@ -921,48 +921,6 @@ void SimulateFile(const std::string& path)
 
         std::cout << '\n';
     }
-
-
-    /*
-    for (const DecodeInstruction& instruction : instructions)
-    {
-        const std::array<uint16_t, 8> beforeRegisters = registers;
-
-        const bool beforeZeroFlag = zeroFlag;
-        const bool beforeSignFlag = signFlag;
-
-        ExecuteInstruction(registers, instruction, zeroFlag, signFlag);
-
-        PrintInstruction(instruction, false);
-
-        bool printedChange = false;
-        for (size_t i = 0; i < registers.size(); ++i)
-        {
-            if (beforeRegisters[i] == registers[i]) continue;
-
-            if (!printedChange)
-            {
-                std::cout << " ;";
-                printedChange = true;
-            }
-
-            std::cout << ' ' << getRegisterName(static_cast<uint8_t>(i), 1)
-                      << ":0x" << std::hex << beforeRegisters[i]
-                      << "->0x" << registers[i] << std::dec;
-        }
-
-        const std::string beforeFlags = FormatFlags(beforeZeroFlag, beforeSignFlag);
-        const std::string afterFlags = FormatFlags(zeroFlag, signFlag);
-
-        if (beforeFlags != afterFlags)
-        {
-            if (!printedChange) std::cout << " ;";
-            std::cout << " flags:" << beforeFlags << "->" << afterFlags;
-        }
-
-        std::cout << '\n';
-    }
-    */
 }
 
 // argc = argument count, argv = argument vector - C Style string array.
