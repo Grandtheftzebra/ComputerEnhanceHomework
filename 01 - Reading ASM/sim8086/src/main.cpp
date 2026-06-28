@@ -47,6 +47,8 @@ struct DecodedInstruction
 
     bool hasJumpTarget = false;
     int jumpTarget {};
+
+    bool uses16Bit = false;
 };
 
 std::vector<uint8_t> ReadBinaryFile(const std::string& path)
@@ -235,6 +237,7 @@ DecodedInstruction DecodeMovRegisterMemoryToFromRegister(const std::vector<uint8
     // decodeRmOperand may add displacement bytes.
 
     DecodedInstruction instruction;
+    instruction.uses16Bit = (w == 1);
     instruction.size = 2;
     instruction.mnemonic = "mov";
 
@@ -300,6 +303,7 @@ DecodedInstruction DecodeMovImmediateToRegister(const std::vector<uint8_t>& byte
     const uint8_t reg = byte1 & 0b111;
 
     DecodedInstruction instruction;
+    instruction.uses16Bit = (w == 1);
     instruction.mnemonic = "mov";
 
     instruction.destinationOperand.kind = OperandKind::Register;
@@ -358,6 +362,7 @@ DecodedInstruction DecodeMovImmediateToRegisterMemory(const std::vector<uint8_t>
     const uint8_t rm = byte2 & 0b111;
 
     DecodedInstruction instruction;
+    instruction.uses16Bit = (w == 1);
     instruction.size = 2;
     instruction.mnemonic = "mov";
     instruction.destinationOperand.kind = OperandKind::Memory;
@@ -437,6 +442,7 @@ DecodedInstruction DecodeArithmeticRegisterMemoryToFromRegister(const std::vecto
     const std::string regOperand = getRegisterName(reg, w);
 
     DecodedInstruction instruction;
+    instruction.uses16Bit = (w == 1);
     instruction.size = 2;
     instruction.mnemonic = mnemonic;
 
@@ -515,6 +521,7 @@ DecodedInstruction DecodeArithmeticImmediateToRegisterMemory(const std::vector<u
     }
 
     DecodedInstruction instruction;
+    instruction.uses16Bit = (w == 1);
     instruction.size = 2;
     instruction.mnemonic = mnemonic;
 
@@ -592,6 +599,7 @@ DecodedInstruction DecodeArithmeticImmediateToAccumulator(const std::vector<uint
     const uint8_t w = byte1 & 0b1;
 
     DecodedInstruction instruction;
+    instruction.uses16Bit = (w == 1);
     instruction.mnemonic = mnemonic;
     instruction.destination = (w == 0) ? "al" : "ax";
 
