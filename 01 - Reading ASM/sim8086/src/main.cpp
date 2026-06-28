@@ -869,17 +869,60 @@ void DecodeFile(const std::string& path)
     }
 }
 
+int32_t CalculateAddress(const std::array<uint16_t, 8>& registers, const Operand& operand)
+{
+    // NOTE: Checks direct 16-bit address special case.
+    if (operand.modValue == 0b00 && operand.rmValue == 0b110) return operand.addressValue;
+
+    switch (operand.rmValue)
+    {
+        case 0b000: return registers[3] + registers[6] + operand.addressValue; // bx + si
+        case 0b001: return registers[3] + registers[7] + operand.addressValue; // bx + di
+        case 0b010: return registers[5] + registers[6] + operand.addressValue; // bp + si
+        case 0b011: return registers[5] + registers[7] + operand.addressValue; // bp + di
+        case 0b100: return registers[6] + operand.addressValue;                // si
+        case 0b101: return registers[7] + operand.addressValue;                // di
+        case 0b110: return registers[5] + operand.addressValue;                // bp
+        case 0b111: return registers[3] + operand.addressValue;                // bx
+        default: throw std::runtime_error("Invalid r/m code");
+    }
+}
+
+uint16_t GetValueAt(const int32_t memoryAddress, const std::vector<uint8_t>& memory, const bool is16Bit)
+{
+    if (memoryAddress < 0) throw std::runtime_error("memoryAddress can't be negative!");
+
+    const size_t address = static_cast<size_t>(memoryAddress);
+    const size_t bytesNeeded = is16Bit ? 2 : 1;
+    if (address + bytesNeeded > memory.size())
+    {
+        throw std::runtime_error("Memory read is out of bounds.");
+    }
+
+    const uint8_t byte1 = memory[address];
+
+    if (!is16Bit)
+    {
+        return byte1;
+    }
+
+    const uint8_t byte2 = memory[address + 1];
+
+    // NOTE: 8086 is little endian
+    return byte1 | (byte2 << 8);
+}
+
 uint16_t ReadOperandValue(
-    std::vector<uint8_t>& memory,
+    const std::vector<uint8_t>& memory,
     const std::array<uint16_t, 8>& registers,
     const Operand& operand,
-    const bool is16BitRegister)
+    const bool is16Bit)
 {
     switch (operand.kind)
     {
         case OperandKind::Register: return registers[operand.registerIndex];
         case OperandKind::Immediate: return operand.immediateValue;
-        case OperandKind::Memory: throw std::runtime_error("Not yet implemented");
+        case OperandKind::Memory: return GetValueAt(CalculateAddress(registers, operand), memory, is16Bit);
         default: throw std::runtime_error("Couldn't find specified Operand Kind.");
     }
 }
@@ -993,9 +1036,15 @@ std::string FormatFlags(const bool zeroFlag, const bool signFlag)
 void SimulateFile(const std::string& path)
 {
     std::vector<uint8_t> memory(1024 * 1024);
-    const std::vector<uint8_t> bytes = ReadBinaryFile(path);
-    std::array<uint16_t, 8> registers {};
     size_t instructionPointer { 0 };
+
+    const std::vector<uint8_t> bytes = ReadBinaryFile(path);
+
+    /* Register Table:
+     * 0 = AX, 1 = CX, 2 = DX, 3 = BX
+     * 4 = SP, 5 = BP, 6 = SI, 7 = DI
+     */
+    std::array<uint16_t, 8> registers {};
 
     bool zeroFlag {};
     bool signFlag {};
