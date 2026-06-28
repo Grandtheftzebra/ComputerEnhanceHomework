@@ -77,7 +77,7 @@ std::vector<uint8_t> ReadBinaryFile(const std::string& path)
 
 void ensureBytesAvailable(const std::vector<uint8_t>& bytes, const size_t index, const size_t count, const char* context)
 {
-    // NOTE: Second check covers cases were index is valid,
+    // NOTE: Second check covers cases where index is valid,
     // but there are not enough remaining bytes to read count bytes.
     if (index > bytes.size() || count > bytes.size() - index)
     {
@@ -881,6 +881,7 @@ uint16_t ReadOperandValue(const std::array<uint16_t, 8>& registers, const Operan
 }
 
 void ExecuteInstruction(
+    std::vector<uint8_t>& memory,
     std::array<uint16_t, 8>& registers,
     const DecodedInstruction& instruction,
     size_t& instructionPointer,
@@ -987,7 +988,7 @@ std::string FormatFlags(const bool zeroFlag, const bool signFlag)
 
 void SimulateFile(const std::string& path)
 {
-    //const std::vector<DecodeInstruction> instructions = ReadAndDecode(path);
+    std::vector<uint8_t> memory(1024 * 1024);
     const std::vector<uint8_t> bytes = ReadBinaryFile(path);
     std::array<uint16_t, 8> registers {};
     size_t instructionPointer { 0 };
@@ -1004,7 +1005,7 @@ void SimulateFile(const std::string& path)
         const DecodedInstruction instruction = DecodeInstruction(bytes, instructionPointer);
         instructionPointer += instruction.size;
 
-        ExecuteInstruction(registers, instruction, instructionPointer,zeroFlag, signFlag);
+        ExecuteInstruction(memory, registers, instruction, instructionPointer,zeroFlag, signFlag);
 
         PrintInstruction(instruction, false);
 
