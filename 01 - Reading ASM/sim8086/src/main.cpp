@@ -166,44 +166,49 @@ std::string decodeRmOperand(
     const uint8_t rm,
     const uint8_t w,
     const bool includeMemorySize,
-    size_t& instructionSize)
+    size_t& instructionSize,
+    Operand& operand)
 {
     if (mod == 0b11)
     {
         return getRegisterName(rm, w);
     }
 
-    std::string operand;
-    // Special Case: direct 16 bit address
+    std::string rmOperand;
+
+    // Special Case: direct 16-bit address
     if (mod == 0b00 && rm == 0b110)
     {
         const uint16_t address = readU16(bytes, instructionIndex + instructionSize, "direct address");
+        operand.addressValue = address;
         instructionSize += 2;
-        operand = "[" + std::to_string(address) + "]";
+        rmOperand = "[" + std::to_string(address) + "]";
     }
     else if (mod == 0b00)
     {
-        operand = "[" + getEffectiveAddressBase(rm) + "]";
+        rmOperand = "[" + getEffectiveAddressBase(rm) + "]";
     }
     else if (mod == 0b01)
     {
         const int8_t displacement = readI8(bytes, instructionIndex + instructionSize, "8-bit displacement");
+        operand.addressValue = displacement;
         instructionSize += 1;
-        operand = "[" + getEffectiveAddressBase(rm) + formatDisplacement(displacement) + "]";
+        rmOperand = "[" + getEffectiveAddressBase(rm) + formatDisplacement(displacement) + "]";
     }
     else
     {
         const int16_t displacement = readI16(bytes, instructionIndex + instructionSize, "16-bit displacement");
+        operand.addressValue = displacement;
         instructionSize += 2;
-        operand = "[" + getEffectiveAddressBase(rm) + formatDisplacement(displacement) + "]";
+        rmOperand = "[" + getEffectiveAddressBase(rm) + formatDisplacement(displacement) + "]";
     }
 
     if (includeMemorySize)
     {
-        operand = std::string((w == 0) ? "byte " : "word ") + operand;
+        rmOperand = std::string((w == 0) ? "byte " : "word ") + rmOperand;
     }
 
-    return operand;
+    return rmOperand;
 }
 
 bool IsMovRegisterMemoryToFromRegister(const uint8_t byte)
@@ -228,12 +233,23 @@ DecodedInstruction DecodeMovRegisterMemoryToFromRegister(const std::vector<uint8
     const std::string regOperand = getRegisterName(reg, w);
     // NOTE: instructionSize starts at 2 because byte1 & byte2 were already consumed.
     // decodeRmOperand may add displacement bytes.
-    size_t instructionSize = 2;
-    const std::string rmOperand = decodeRmOperand(bytes, index, mod, rm, w, true, instructionSize);
 
-    DecodedInstruction result;
-    result.mnemonic = "mov";
-    result.size = instructionSize;
+    DecodedInstruction instruction;
+    instruction.size = 2;
+    instruction.mnemonic = "mov";
+
+    Operand rmAsOperand;
+    rmAsOperand.modValue = mod;
+    rmAsOperand.rmValue = rm;
+    const std::string rmOperand = decodeRmOperand(
+        bytes,
+        index,
+        mod,
+        rm,
+        w,
+        true,
+        instruction.size,
+        rmAsOperand);
 
     // Reg field is unconditionally a register
     Operand regAsOperand;
@@ -241,7 +257,6 @@ DecodedInstruction DecodeMovRegisterMemoryToFromRegister(const std::vector<uint8
     regAsOperand.registerIndex = reg;
 
     // rm field is only a register when mod == 0b11; otherwise it's memory
-    Operand rmAsOperand;
     if (mod == 0b11)
     {
         rmAsOperand.kind = OperandKind::Register;
@@ -254,22 +269,22 @@ DecodedInstruction DecodeMovRegisterMemoryToFromRegister(const std::vector<uint8
 
     if (d == 1)
     {
-        result.destination = regOperand;
-        result.source = rmOperand;
+        instruction.destination = regOperand;
+        instruction.source = rmOperand;
 
-        result.destinationOperand = regAsOperand;
-        result.sourceOperand = rmAsOperand;
+        instruction.destinationOperand = regAsOperand;
+        instruction.sourceOperand = rmAsOperand;
     }
     else
     {
-        result.destination = rmOperand;
-        result.source = regOperand;
+        instruction.destination = rmOperand;
+        instruction.source = regOperand;
 
-        result.destinationOperand = rmAsOperand;
-        result.sourceOperand = regAsOperand;
+        instruction.destinationOperand = rmAsOperand;
+        instruction.sourceOperand = regAsOperand;
     }
 
-    return result;
+    return instruction;
 }
 
 bool IsMovImmediateToRegister(const uint8_t byte1)
