@@ -213,11 +213,6 @@ DecodedInstruction DecodeMovRegisterMemoryToFromRegister(const std::vector<uint8
     const uint8_t byte1 = bytes[index];
     const uint8_t byte2 = bytes[index + 1];
 
-    if (!IsMovRegisterMemoryToFromRegister(byte1))
-    {
-        throw std::runtime_error("Unsupported instruction (not a mov reg/mem-to/from-reg).");
-    }
-
     const uint8_t d = (byte1 >> 1) & 0b1;
     const uint8_t w = byte1 & 0b1;
 
@@ -280,10 +275,6 @@ bool IsMovImmediateToRegister(const uint8_t byte1)
 DecodedInstruction DecodeMovImmediateToRegister(const std::vector<uint8_t>& bytes, const size_t index)
 {
     const uint8_t byte1 = bytes[index];
-    if (!IsMovImmediateToRegister(byte1))
-    {
-        throw std::runtime_error("Unsupported instruction not a mov Immediate to Register instruction.");
-    }
 
     const uint8_t w = (byte1 >> 3) & 0b1;
     const uint8_t reg = byte1 & 0b111;
@@ -313,6 +304,64 @@ DecodedInstruction DecodeMovImmediateToRegister(const std::vector<uint8_t>& byte
         result.sourceOperand.immediateValue = immediate;
         result.source = formatSigned16(immediate);
         result.size = 3;
+    }
+
+    return result;
+}
+
+bool IsMovImmediateToRegisterMemory(const uint8_t byte1)
+{
+    return byte1 >> 1 == 0b1100011;
+}
+
+DecodedInstruction DecodeMovImmediateToRegisterMemory(const std::vector<uint8_t>& bytes, const size_t index)
+{
+    ensureBytesAvailable(bytes, index, 2, "mov immediate to register memory");
+
+    const uint8_t byte1 = bytes[index];
+    const uint8_t byte2 = bytes[index + 1];
+
+    const uint8_t w = byte1 & 0b1;
+
+    const uint8_t mod = (byte2 >> 6) & 0b11;
+    if (mod == 0b11)
+    {
+        throw std::runtime_error("Unsupported mod field");
+    }
+
+    const uint8_t regOpCodeExtension = (byte2 >> 3) & 0b111;
+    if (regOpCodeExtension != 0b000 )
+    {
+        throw std::runtime_error("reg field is not zero.");
+    }
+
+    const uint8_t rm = byte2 & 0b111;
+
+    size_t instructionSize = 2;
+    const std::string rmOperand = decodeRmOperand(bytes, index, mod, rm, w, true, instructionSize);
+
+    DecodedInstruction result;
+    result.mnemonic = "mov";
+    result.destination = rmOperand;
+    result.destinationOperand.kind = OperandKind::Memory;
+
+    result.sourceOperand.kind = OperandKind::Immediate;
+    if (w == 0)
+    {
+        ensureBytesAvailable(bytes, index + instructionSize, 1, "8-bit immediate");
+        const uint8_t immediate = bytes[index + instructionSize];
+
+        result.sourceOperand.immediateValue = immediate;
+        result.source = formatSigned8(immediate);
+        result.size = instructionSize + 1;
+    }
+    else
+    {
+        const uint16_t immediate = readU16(bytes, index + instructionSize, "16-bit immediate");
+
+        result.sourceOperand.immediateValue = immediate;
+        result.source = formatSigned16(immediate);
+        result.size = instructionSize + 2;
     }
 
     return result;
@@ -604,6 +653,10 @@ DecodedInstruction DecodeInstruction(const std::vector<uint8_t>& bytes, const si
     else if (IsMovImmediateToRegister(byte1))
     {
         instruction = DecodeMovImmediateToRegister(bytes, index);
+    }
+    else if (IsMovImmediateToRegisterMemory(byte1))
+    {
+        instruction = DecodeMovImmediateToRegisterMemory(bytes, index);
     }
     else if (IsArithmeticRegisterMemoryToFromRegister(byte1))
     {
