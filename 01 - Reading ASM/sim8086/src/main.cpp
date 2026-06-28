@@ -224,7 +224,7 @@ DecodedInstruction DecodeMovRegisterMemoryToFromRegister(const std::vector<uint8
     // NOTE: instructionSize starts at 2 because byte1 & byte2 were already consumed.
     // decodeRmOperand may add displacement bytes.
     size_t instructionSize = 2;
-    const std::string rmOperand = decodeRmOperand(bytes, index, mod, rm, w, false, instructionSize);
+    const std::string rmOperand = decodeRmOperand(bytes, index, mod, rm, w, true, instructionSize);
 
     DecodedInstruction result;
     result.mnemonic = "mov";
@@ -408,7 +408,7 @@ DecodedInstruction DecodeArithmeticRegisterMemoryToFromRegister(const std::vecto
 
     const std::string regOperand = getRegisterName(reg, w);
     size_t instructionSize = 2;
-    const std::string rmOperand = decodeRmOperand(bytes, index, mod, rm, w, false, instructionSize);
+    const std::string rmOperand = decodeRmOperand(bytes, index, mod, rm, w, true, instructionSize);
 
     DecodedInstruction result;
     result.mnemonic = mnemonic;
@@ -477,8 +477,7 @@ DecodedInstruction DecodeArithmeticImmediateToRegisterMemory(const std::vector<u
     }
 
     size_t instructionSize = 2;
-    constexpr bool includeMemorySize = true;
-    const std::string destination = decodeRmOperand(bytes, index, mod, rm, w, includeMemorySize, instructionSize);
+    const std::string destination = decodeRmOperand(bytes, index, mod, rm, w, true, instructionSize);
 
     // TODO: Currently assumes rm is always a register. Fix later.
     Operand destinationOperand {};
