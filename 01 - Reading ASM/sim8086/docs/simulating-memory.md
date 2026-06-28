@@ -1,8 +1,7 @@
 # Simulating Memory
 
 This is the continuation of [SIMULATING_MOVS.md](SIMULATING_MOVS.md). It records
-the changes needed to decode and execute the memory operations in Listings 51 and
-52.
+the changes needed to decode and execute the memory operations in Listings 51 and 52.
 
 ## The central idea
 
