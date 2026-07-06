@@ -891,6 +891,12 @@ Both simulate. `-execS` additionally passes `saveFile = true` to `SimulateFile`,
 
 ---
 
+## Further Reading
+
+How these exact concepts appear in optimized MSVC output from a modern C++ engine (and Unity's C# pipeline): [from-8086-to-modern-asm.md](from-8086-to-modern-asm.md).
+
+---
+
 ## Quick Reference Card
 
 **Field extraction idioms:**
