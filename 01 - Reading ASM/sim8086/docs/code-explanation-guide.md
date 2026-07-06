@@ -411,7 +411,7 @@ The source is an immediate, so the `reg` slot isn't needed for a register — In
 
 One byte, and it is **sign-extended** to 16 bits: `0b11111111` means −1 (i.e. `0xFFFF` as a word). This is a size optimization — `add bx, -1` needs 3 bytes instead of 4.
 
-*Caveat in this code:* the display is correct (`formatSigned8` prints −1), but `sourceOperand.immediateValue` is assigned from the raw `uint8_t` (255) without sign-extension — so the **simulator** would add 255, not −1, for negative sign-extended immediates. Disassembly is right; simulation of negative `s=1` immediates is not.
+In the code, the sign-extension happens when storing the immediate for the simulator: `static_cast<int8_t>` reinterprets the byte as signed (`0b11111111` → −1), then widening to `int16_t` sign-extends (−1 → `0b1111111111111111`), and the final `uint16_t` cast keeps that bit pattern (`0xFFFF`). For `w = 0` the raw byte is stored as-is, since the operation itself is 8-bit.
 
 </details>
 
@@ -847,8 +847,6 @@ Any two of:
 - **Segmentation** — addresses index the 1 MB array directly; no CS/DS/SS/ES.
 - **Code and data sharing one memory** — program bytes live outside the simulated memory.
 - **18 of the 19 other jumps** — only `jnz` executes; the rest decode but throw under `-exec`.
-- **Sign-extension of `s=1` immediates at execution time** (display is correct, simulation uses the unextended byte).
-- **Accumulator-immediate operands** — `DecodeArithmeticImmediateToAccumulator` fills only the display strings, never `sourceOperand`/`destinationOperand`. The source operand keeps its defaults (`kind = Register`, index 0 = ax), so under `-exec` an `add ax, 1000` would actually compute `ax + ax`. Disassembly of this form is correct; simulation is not.
 
 </details>
 

@@ -555,9 +555,12 @@ DecodedInstruction DecodeArithmeticImmediateToRegisterMemory(const std::vector<u
     if (s == 1 || w == 0)
     {
         ensureBytesAvailable(bytes, index + instruction.size, 1, "8-bit immediate");
-        uint8_t value = bytes[index + instruction.size];
+        const uint8_t value = bytes[index + instruction.size];
 
-        sourceOperand.immediateValue = value;
+        // NOTE: s=1,w=1 means the byte is sign-extended to 16 bits at execution time.
+        sourceOperand.immediateValue = (w == 1)
+            ? static_cast<uint16_t>(static_cast<int16_t>(static_cast<int8_t>(value)))
+            : value;
         source = formatSigned8(value);
         instruction.size += 1;
     }
@@ -603,15 +606,25 @@ DecodedInstruction DecodeArithmeticImmediateToAccumulator(const std::vector<uint
     instruction.mnemonic = mnemonic;
     instruction.destination = (w == 0) ? "al" : "ax";
 
+    // NOTE: The accumulator is always register 0 (al/ax).
+    instruction.destinationOperand.kind = OperandKind::Register;
+    instruction.destinationOperand.registerIndex = 0;
+    instruction.sourceOperand.kind = OperandKind::Immediate;
+
     if (w == 0)
     {
         ensureBytesAvailable(bytes, index + 1, 1, "8-bit accumulator immediate");
-        instruction.source = formatSigned8(bytes[index + 1]);
+        const uint8_t immediate = bytes[index + 1];
+
+        instruction.sourceOperand.immediateValue = immediate;
+        instruction.source = formatSigned8(immediate);
         instruction.size = 2;
     }
     else
     {
         const uint16_t immediate = readU16(bytes, index + 1, "16-bit accumulator immediate");
+
+        instruction.sourceOperand.immediateValue = immediate;
         instruction.source = formatSigned16(immediate);
         instruction.size = 3;
     }
