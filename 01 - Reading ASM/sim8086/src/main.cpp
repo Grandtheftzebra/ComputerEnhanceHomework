@@ -1064,7 +1064,7 @@ std::string FormatFlags(const bool zeroFlag, const bool signFlag)
     return flags;
 }
 
-void SimulateFile(const std::string& path)
+void SimulateFile(const std::string& path, bool saveFile = false)
 {
     std::vector<uint8_t> memory(1024 * 1024);
     size_t instructionPointer { 0 };
@@ -1120,6 +1120,19 @@ void SimulateFile(const std::string& path)
 
         std::cout << '\n';
     }
+
+    if (saveFile)
+    {
+        const std::string outputPath = path + ".data";
+        std::ofstream output(outputPath, std::ios::binary);
+
+        if (!output.write(
+            reinterpret_cast<const char*>(memory.data()),
+            static_cast<std::streamsize>(memory.size())))
+        {
+            throw std::runtime_error("Failed to write memory: " + outputPath);
+        }
+    }
 }
 
 // argc = argument count, argv = argument vector - C Style string array.
@@ -1134,6 +1147,10 @@ int main(int argc, char** argv)
         else if (argc == 3 && std::string(argv[1]) == "-exec")
         {
             SimulateFile(argv[2]);
+        }
+        else if (argc == 3 && std::string(argv[1]) == "-execS")
+        {
+            SimulateFile(argv[2], true);
         }
         // No binary file name specified, just: .\cmake-build-debug\sim8086.exe
         else
