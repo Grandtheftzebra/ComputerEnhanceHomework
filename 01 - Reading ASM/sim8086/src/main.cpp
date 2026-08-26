@@ -241,7 +241,7 @@ DecodedInstruction DecodeMovRegisterMemoryToFromRegister(const std::vector<uint8
 
     // NOTE: instruction size starts at 2 because byte1 & byte2 were already consumed.
     // decodeRmOperand may add displacement bytes.
-    DecodedInstruction instruction;
+    DecodedInstruction instruction{};
     instruction.uses16Bit = (w == 1);
     instruction.size = 2;
     instruction.mnemonic = "mov";
