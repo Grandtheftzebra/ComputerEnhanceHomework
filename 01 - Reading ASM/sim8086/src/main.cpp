@@ -9,7 +9,12 @@
 #include <string>
 #include <vector>
 
-enum class OperandKind {Register, Immediate, Memory};
+enum class OperandKind
+{
+    Register,
+    Immediate,
+    Memory
+};
 
 // NOTE: Not used currently, but better than using strings in the future.
 enum class MnemonicType
@@ -233,9 +238,9 @@ DecodedInstruction DecodeMovRegisterMemoryToFromRegister(const std::vector<uint8
     const uint8_t rm = byte2 & 0b111;
 
     const std::string regOperand = getRegisterName(reg, w);
+
     // NOTE: instruction size starts at 2 because byte1 & byte2 were already consumed.
     // decodeRmOperand may add displacement bytes.
-
     DecodedInstruction instruction;
     instruction.uses16Bit = (w == 1);
     instruction.size = 2;
@@ -772,9 +777,7 @@ std::vector<DecodedInstruction> DecodeInstructions(const std::vector<uint8_t>& b
     return instructions;
 }
 
-std::map<size_t, std::string> BuildJumpLabels(
-    const std::vector<DecodedInstruction>& instructions,
-    const size_t fileSize)
+std::map<size_t, std::string> BuildJumpLabels(const std::vector<DecodedInstruction>& instructions, const size_t fileSize)
 {
     std::set<size_t> instructionOffsets;
     for (const DecodedInstruction& instruction : instructions)
