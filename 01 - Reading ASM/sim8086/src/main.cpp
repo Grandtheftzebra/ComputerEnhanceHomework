@@ -147,7 +147,8 @@ const char* getRegisterName(const uint8_t regCode, const uint8_t w)
 
 std::string getEffectiveAddressBase(const uint8_t rm)
 {
-    static const char* table[8] = {
+    static const char* table[8] =
+    {
         "bx + si",
         "bx + di",
         "bp + si",
