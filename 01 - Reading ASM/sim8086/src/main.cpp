@@ -716,6 +716,7 @@ DecodedInstruction DecodeJump(const std::vector<uint8_t>& bytes, const size_t in
     instruction.destination = std::to_string(displacement);
     instruction.size = 2;
     instruction.hasJumpTarget = true;
+    // NOTE: Determines the offset where the instruction jumps to
     instruction.jumpTarget = static_cast<int>(index) + static_cast<int>(instruction.size) + static_cast<int>(displacement);
 
     return instruction;
@@ -759,6 +760,7 @@ DecodedInstruction DecodeInstruction(const std::vector<uint8_t>& bytes, const si
         throw std::runtime_error("Instruction is not supported.");
     }
 
+    // NOTE: Determines where the instruction begins.
     instruction.offset = index;
 
     return instruction;
@@ -780,13 +782,16 @@ std::vector<DecodedInstruction> DecodeInstructions(const std::vector<uint8_t>& b
 
 std::map<size_t, std::string> BuildJumpLabels(const std::vector<DecodedInstruction>& instructions, const size_t fileSize)
 {
+    // 1: Store the beginning (offset) of each instruction in a set.
+    // A set is sorted and unique so it's chronological (0,1,2 ..., n-1, n)
     std::set<size_t> instructionOffsets;
     for (const DecodedInstruction& instruction : instructions)
     {
         instructionOffsets.insert(instruction.offset);
     }
 
-    std::set<size_t> targetOffsets;
+    // 2: Collect jumpTargets. So the set does only contain valid, unique jump destinations.
+    std::set<size_t> jumpTargetOffsets;
     for (const DecodedInstruction& instruction : instructions)
     {
         if (!instruction.hasJumpTarget || instruction.jumpTarget < 0) continue;
@@ -794,13 +799,16 @@ std::map<size_t, std::string> BuildJumpLabels(const std::vector<DecodedInstructi
         const auto targetOffset = static_cast<size_t>(instruction.jumpTarget);
         if (instructionOffsets.contains(targetOffset) || targetOffset == fileSize)
         {
-            targetOffsets.insert(targetOffset);
+            jumpTargetOffsets.insert(targetOffset);
         }
     }
 
+    // 3: Label jumpTargets.
+    // Since jumpTargetOffsets is a set, it's chronologically sorted.
+    // Meaning the lowest jumpScore is assigned to the lowest offset and the highest jumpScore is assigned to the highest offeset
     std::map<size_t, std::string> labels;
     int labelIndex = 0;
-    for (const size_t targetOffset : targetOffsets)
+    for (const size_t targetOffset : jumpTargetOffsets)
     {
         labels[targetOffset] = "label" + std::to_string(labelIndex);
         ++labelIndex;
@@ -809,18 +817,17 @@ std::map<size_t, std::string> BuildJumpLabels(const std::vector<DecodedInstructi
     return labels;
 }
 
-void ApplyJumpLabels(
-    std::vector<DecodedInstruction>& instructions,
-    const std::map<size_t, std::string>& labels)
+void ApplyJumpLabels(std::vector<DecodedInstruction>& instructions, const std::map<size_t, std::string>& labels)
 {
     for (DecodedInstruction& instruction : instructions)
     {
         if (!instruction.hasJumpTarget || instruction.jumpTarget < 0) continue;
 
-        const auto label = labels.find(static_cast<size_t>(instruction.jumpTarget));
-        if (label != labels.end())
+        // Replace the numeric destination only when a valid target received a label.
+        const auto labelIt = labels.find(static_cast<size_t>(instruction.jumpTarget));
+        if (labelIt != labels.end())
         {
-            instruction.destination = label->second;
+            instruction.destination = labelIt->second;
         }
     }
 }
