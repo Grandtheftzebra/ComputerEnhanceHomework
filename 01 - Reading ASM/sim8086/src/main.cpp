@@ -329,6 +329,7 @@ DecodedInstruction DecodeMovImmediateToRegister(const std::vector<uint8_t>& byte
     }
     else
     {
+        // Keep the encoded 16-bit value; signedness matters when interpreting it.
         const uint16_t immediate = readU16(bytes, index + 1, "16-bit immediate");
 
         instruction.sourceOperand.immediateValue = immediate;
@@ -940,7 +941,7 @@ void SetValueAt(const int32_t memoryAddress, std::vector<uint8_t>& memory, const
 {
     if (memoryAddress < 0) throw std::runtime_error("memoryAddress can't be negative!");
 
-    const size_t address = static_cast<size_t>(memoryAddress);
+    const auto address = static_cast<size_t>(memoryAddress);
     const size_t bytesNeeded = is16Bit ? 2 : 1;
     if (address + bytesNeeded > memory.size())
     {
@@ -1081,7 +1082,7 @@ void PrintInstruction(const DecodedInstruction& instruction, const bool newline 
 
 std::string FormatFlags(const bool zeroFlag, const bool signFlag)
 {
-    std::string flags;
+    std::string flags{};
     if (zeroFlag) flags += 'Z';
     if (signFlag) flags += 'S';
 
@@ -1090,19 +1091,20 @@ std::string FormatFlags(const bool zeroFlag, const bool signFlag)
 
 void SimulateFile(const std::string& path, bool saveFile = false)
 {
+    // 1024KIB | 1024 x 1024 Bytes = 1.048.576 Bytes | 1 MiB Memory
     std::vector<uint8_t> memory(1024 * 1024);
     size_t instructionPointer { 0 };
 
     const std::vector<uint8_t> bytes = ReadBinaryFile(path);
 
     /* Register Table:
-     * 0 = AX, 1 = CX, 2 = DX, 3 = BX
-     * 4 = SP, 5 = BP, 6 = SI, 7 = DI
+     * 0 = AX, 1 = CX, 2 = DX, 3 = BX  -> addressable as 16-bit or as high/low 8-bit halves
+     * 4 = SP, 5 = BP, 6 = SI, 7 = DI  -> addressable only as 16-bit
      */
-    std::array<uint16_t, 8> registers {};
+    std::array<uint16_t, 8> registers{};
 
-    bool zeroFlag {};
-    bool signFlag {};
+    bool zeroFlag{ false };
+    bool signFlag{ false };
 
     while (instructionPointer < bytes.size())
     {
@@ -1168,6 +1170,7 @@ int main(int argc, char** argv)
         {
             DecodeFile(argv[1]);
         }
+        // TODO: We could add another command for also displaying the instruction pointer.
         else if (argc == 3 && std::string(argv[1]) == "-exec")
         {
             SimulateFile(argv[2]);
